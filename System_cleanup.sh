@@ -65,4 +65,6 @@ cleared_space=$((start_space - end_space))
 echo "系统清理完成，清理了 $((cleared_space / 1024))M 空间！"
 
 # 添加定时执行任务
-echo -e "$(crontab -l)\n30 0 * * * cd ~ && ./System_cleanup.sh" | crontab -
+if ! crontab -l | grep -q '/System_cleanup.sh'; then
+    echo -e "$(crontab -l)\n30 0 * * * cd ~ && ./System_cleanup.sh" | crontab -
+fi
