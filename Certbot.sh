@@ -7,7 +7,7 @@ sudo systemctl stop nginx
 apt update -y && apt install -y certbot
 
 # 获取域名
-read -p "请输入域名（多个域名用空格分隔）：" domains
+read -p "请输入已解析好的域名（多个域名用空格分隔）：" domains
 
 # 检查域名是否为空
 if [ -z "$domains" ]; then
