@@ -11,7 +11,7 @@ read -p "请输入已解析好的域名（多个域名用空格分隔）：" dom
 
 # 检查域名是否为空
 if [ -z "$domains" ]; then
-  echo "请输入域名！"
+  echo "域名为空，脚本已自动退出！"
   exit 1
 fi
 
