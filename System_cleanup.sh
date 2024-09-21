@@ -1,7 +1,7 @@
 #!/bin/bash
-#服务器清理脚本
-#本脚本在原代码基础上添加定时执行任务
-#原作者脚本地址：https://raw.githubusercontent.com/shannonlog2n/Linux_CleanUp_Script/main/server_cleanup.sh
+#《服务器清理脚本》
+# 本脚本在原代码基础上添加定时执行任务
+# 原作者脚本地址：https://raw.githubusercontent.com/shannonlog2n/Linux_CleanUp_Script/main/server_cleanup.sh
 
 # 确保脚本以root权限运行
 if [[ $EUID -ne 0 ]]; then
