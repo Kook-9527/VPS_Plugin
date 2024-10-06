@@ -4,7 +4,7 @@
 certs_directory="/etc/letsencrypt/live/"
 certs_backup_directory="/root/cert/"
 
-days_before_expiry=5  # 设置在证书到期前几天触发续签
+days_before_expiry=30  # 设置在证书到期前几天触发续签
 
 # 遍历所有证书文件
 for cert_dir in $certs_directory*; do
