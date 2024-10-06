@@ -73,13 +73,22 @@ if [ ! -d ".git" ]; then
   git init
 fi
 
+# 检查远程仓库配置并更新
+git remote | grep origin &> /dev/null
+if [ $? -eq 0 ]; then
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] 更新远程仓库地址..." | tee -a $LOG_FILE
+  git remote set-url origin "https://$GITHUB_TOKEN@github.com/$GITHUB_USERNAME/$GITHUB_REPO.git"
+else
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] 添加远程仓库..." | tee -a $LOG_FILE
+  git remote add origin "https://$GITHUB_TOKEN@github.com/$GITHUB_USERNAME/$GITHUB_REPO.git"
+fi
+
 # 提交并推送到 GitHub
 echo "[$(date +'%Y-%m-%d %H:%M:%S')] 提交备份并推送到 GitHub..." | tee -a $LOG_FILE
 git add $BACKUP_FILE
 git commit -m "Auto backup on $(date +'%Y-%m-%d %H:%M:%S')" | tee -a $LOG_FILE
 
-# 设置 GitHub 远程仓库并推送
-git remote add origin "https://$GITHUB_TOKEN@github.com/$GITHUB_USERNAME/$GITHUB_REPO.git" 2>/dev/null  # 如果已存在则忽略错误
+# 推送到远程仓库
 git branch -M $GITHUB_BRANCH
 git push -u origin $GITHUB_BRANCH --force | tee -a $LOG_FILE
 
