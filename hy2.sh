@@ -26,6 +26,19 @@ PASSWORD=${PASSWORD:-$(< /dev/urandom tr -dc A-Za-z0-9 | head -c20)}
 # 设置端口跳跃
 sudo iptables -t nat -A PREROUTING -i eth0 -p udp --dport $UDP_PORT_RANGE_START:$UDP_PORT_RANGE_END -j DNAT --to-destination :$LOCAL_PORT && sudo ip6tables -t nat -A PREROUTING -i eth0 -p udp --dport $UDP_PORT_RANGE_START:$UDP_PORT_RANGE_END -j DNAT --to-destination :$LOCAL_PORT
 
+# ⑥端口跳跃设置开机自启
+sudo tee -a /etc/iptables/rules.v4 >/dev/null <<EOF
+*nat
+-A PREROUTING -i eth0 -p udp --dport $UDP_PORT_RANGE_START:$UDP_PORT_RANGE_END -j DNAT --to-destination :$LOCAL_PORT
+COMMIT
+EOF
+
+sudo tee -a /etc/iptables/rules.v6 >/dev/null <<EOF
+*nat
+-A PREROUTING -i eth0 -p udp --dport $UDP_PORT_RANGE_START:$UDP_PORT_RANGE_END -j DNAT --to-destination :$LOCAL_PORT
+COMMIT
+EOF
+
 # 服务端配置
 cat << EOF > /etc/hysteria/config.yaml
 listen: :$LOCAL_PORT
