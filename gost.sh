@@ -941,7 +941,7 @@ update_sh() {
 # 脚本入口
 update_sh
 echo && echo -e "                 gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}"
-echo -e "  ----------- 修改by：Kook  gost版本v2.11.5 -----------"
+echo -e "  ------- 作者by：KANIKIG 修改by：Kook9527  gost版本v2.11.5 -------"
 echo -e "  特性: (1)本脚本采用systemd及gost配置文件对gost进行管理"
 echo -e "        (2)能够在不借助其他工具(如screen)的情况下实现多条转发规则同时生效"
 echo -e "        (3)机器reboot后转发不失效"
