@@ -940,15 +940,19 @@ update_sh() {
 
 # 脚本入口
 update_sh
-echo && echo -e "             gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}" && echo -e
-echo -e "  ------- 修改by：Kook9527  gost版本v2.11.5 -------"
-echo -e "  特性: (1)本脚本采用systemd及gost配置文件对gost进行管理"
-echo -e "        (2)能够在不借助其他工具(如screen)的情况下实现多条转发规则同时生效"
-echo -e "        (3)机器reboot后转发不失效"
-echo -e "  功能: (1)tcp+udp不加密转发, (2)中转机加密转发, (3)落地机解密对接转发"
-echo -e "  修复/新增: 修复定时任务不生效 & 操作后返回主菜单 & 主菜单退出脚本选项"
-echo -e "  帮助文档：https://github.com/KANIKIG/Multi-EasyGost"
-echo && echo -e "———————————————"
+echo -e "┌─────────────────────────────────────────────────────────────┐"
+echo -e "│                                                             │"
+echo -e "│        Gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}丨gost版本v2.11.5        │"
+echo -e "│                                                             │"
+echo -e "├────── 修改by：Kook9527丨基于KANIKIG的EasyGost脚本修改 ──────┤"
+echo -e "└─────────────────────────────────────────────────────────────┘"
+echo -e "特性: (1)本脚本采用systemd及gost配置文件对gost进行管理"
+echo -e "      (2)能够在不借助其他工具(如screen)的情况下实现多条转发规则同时生效"
+echo -e "      (3)机器reboot后转发不失效"
+echo -e "功能: (1)tcp+udp不加密转发, (2)中转机加密转发, (3)落地机解密对接转发"
+echo -e "修复/新增: 修复定时任务不生效 & 操作后返回主菜单 & 主菜单退出脚本选项"
+echo -e "帮助文档：https://github.com/KANIKIG/Multi-EasyGost"
+echo -e "———————————————"
 echo -e " ${Green_font_prefix}1.${Font_color_suffix} 安装 gost"
 echo -e " ${Green_font_prefix}2.${Font_color_suffix} 更新 gost"
 echo -e " ${Green_font_prefix}3.${Font_color_suffix} 卸载 gost"
