@@ -945,6 +945,7 @@ echo -e "  ------- 作者by：KANIKIG 修改by：Kook9527  gost版本v2.11.5 ---
 echo -e "  特性: (1)本脚本采用systemd及gost配置文件对gost进行管理"
 echo -e "        (2)能够在不借助其他工具(如screen)的情况下实现多条转发规则同时生效"
 echo -e "        (3)机器reboot后转发不失效"
+echo -e "        (4)修复定时任务不生效 & 添加回车返回脚本(退出脚本请使用Ctrl+C)"
 echo -e "  功能: (1)tcp+udp不加密转发, (2)中转机加密转发, (3)落地机解密对接转发"
 echo -e "  帮助文档：https://github.com/KANIKIG/Multi-EasyGost"
 
