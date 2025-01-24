@@ -125,7 +125,7 @@ function Install_ct() {
     echo "*******回车返回脚本*******"
     read -r
     if [[ $? -eq 0 ]]; then
-      exec ./gost.sh
+      exec bash gost.sh
     else
       echo "读取失败或中断，手动重新运行脚本。"
     fi
@@ -138,7 +138,7 @@ function Install_ct() {
     echo "*******回车返回脚本*******"
     read -r
     if [[ $? -eq 0 ]]; then
-      exec ./gost.sh
+      exec bash gost.sh
     else
       echo "读取失败或中断，手动重新运行脚本。"
     fi
@@ -164,7 +164,7 @@ function prompt_return() {
   echo "*******回车返回脚本*******"
   read -r
   if [[ $? -eq 0 ]]; then
-    exec ./gost.sh
+    exec bash gost.sh
   else
     echo "读取失败或中断，手动重新运行脚本。"
   fi
@@ -909,7 +909,7 @@ function prompt_return() {
   echo "*******回车返回脚本*******"
   read -r
   if [[ $? -eq 0 ]]; then
-    exec ./gost.sh
+    exec bash gost.sh
   else
     echo "读取失败或中断，手动重新运行脚本。"
   fi
