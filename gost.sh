@@ -969,7 +969,7 @@ echo -e "———————————————" && echo
 read -e -p " 请输入数字 [0-11]:" num
 case "$num" in
 0)
-  echo "已退出脚本"
+  echo "已退出脚本" && echo
   exit 0
   ;;
 1)
