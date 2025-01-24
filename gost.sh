@@ -161,7 +161,7 @@ function Restart_ct() {
 }
 
 function prompt_return() {
-  echo "*****回车返回脚本*****"
+  echo "*******回车返回脚本*******"
   read -r
   if [[ $? -eq 0 ]]; then
     exec ./gost.sh
@@ -898,15 +898,15 @@ function cron_restart() {
   esac
 
   systemctl restart cron
-  echo "cron 服务已重新加载。"
-  echo "-----------------------------------"
-  echo "当前用户的 crontab 内容:"
+  echo -e "------------------------------------------------------------------"
+  echo -e "           定时任务已重新加载，以下为当前用户的所有定时内容:"
+  echo -e "------------------------------------------------------------------"
   crontab -l
-  echo "-----------------------------------"
+  echo -e "------------------------------------------------------------------"
 }
 
 function prompt_return() {
-  echo "*****回车返回脚本*****"
+  echo "*******回车返回脚本*******"
   read -r
   if [[ $? -eq 0 ]]; then
     exec ./gost.sh
