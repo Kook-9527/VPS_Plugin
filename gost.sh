@@ -122,12 +122,26 @@ function Install_ct() {
     rm -rf "$(pwd)"/gost
     rm -rf "$(pwd)"/gost.service
     rm -rf "$(pwd)"/config.json
+    echo "*******回车返回脚本*******"
+    read -r
+    if [[ $? -eq 0 ]]; then
+      exec ./gost.sh
+    else
+      echo "读取失败或中断，手动重新运行脚本。"
+    fi
   else
     echo "gost没有安装成功"
     rm -rf "$(pwd)"/gost
     rm -rf "$(pwd)"/gost.service
     rm -rf "$(pwd)"/config.json
     rm -rf "$(pwd)"/gost.sh
+    echo "*******回车返回脚本*******"
+    read -r
+    if [[ $? -eq 0 ]]; then
+      exec ./gost.sh
+    else
+      echo "读取失败或中断，手动重新运行脚本。"
+    fi
   fi
 }
 
