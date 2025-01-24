@@ -940,32 +940,38 @@ update_sh() {
 
 # 脚本入口
 update_sh
-echo && echo -e "                 gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}"
-echo -e "  ------- 作者by：KANIKIG 修改by：Kook9527  gost版本v2.11.5 -------"
+echo && echo -e "                     gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}"
+echo -e "  ------- 修改by：Kook9527 原作者by：KANIKIG  gost版本v2.11.5 -------"
 echo -e "  特性: (1)本脚本采用systemd及gost配置文件对gost进行管理"
 echo -e "        (2)能够在不借助其他工具(如screen)的情况下实现多条转发规则同时生效"
 echo -e "        (3)机器reboot后转发不失效"
-echo -e "        (4)修复定时任务不生效 & 添加回车返回脚本(退出脚本请使用Ctrl+C)"
 echo -e "  功能: (1)tcp+udp不加密转发, (2)中转机加密转发, (3)落地机解密对接转发"
+echo -e "  修复/新增: 修复定时任务不生效 & 操作后返回主菜单 & 主菜单退出脚本选项"
 echo -e "  帮助文档：https://github.com/KANIKIG/Multi-EasyGost"
-
+echo && echo -e "———————————————"
 echo -e " ${Green_font_prefix}1.${Font_color_suffix} 安装 gost"
 echo -e " ${Green_font_prefix}2.${Font_color_suffix} 更新 gost"
 echo -e " ${Green_font_prefix}3.${Font_color_suffix} 卸载 gost"
-echo -e "————————————"
+echo -e "———————————————"
 echo -e " ${Green_font_prefix}4.${Font_color_suffix} 启动 gost"
 echo -e " ${Green_font_prefix}5.${Font_color_suffix} 停止 gost"
 echo -e " ${Green_font_prefix}6.${Font_color_suffix} 重启 gost"
-echo -e "————————————"
+echo -e "———————————————"
 echo -e " ${Green_font_prefix}7.${Font_color_suffix} 新增gost转发配置"
 echo -e " ${Green_font_prefix}8.${Font_color_suffix} 查看现有gost配置"
 echo -e " ${Green_font_prefix}9.${Font_color_suffix} 删除一则gost配置"
-echo -e "————————————"
+echo -e "———————————————"
 echo -e " ${Green_font_prefix}10.${Font_color_suffix} gost定时重启配置"
 echo -e " ${Green_font_prefix}11.${Font_color_suffix} 自定义TLS证书配置"
-echo -e "————————————" && echo
-read -e -p " 请输入数字 [1-11]:" num
+echo -e "———————————————"
+echo -e " ${Green_font_prefix}0.${Font_color_suffix} 退出脚本"
+echo -e "———————————————" && echo
+read -e -p " 请输入数字 [0-11]:" num
 case "$num" in
+0)
+  echo "已退出脚本"
+  exit 0
+  ;;
 1)
   Install_ct
   ;;
@@ -1026,7 +1032,7 @@ case "$num" in
   prompt_return
   ;;
 *)
-  echo "请输入正确数字 [1-11]"
+  echo "请输入正确数字 [0-11]"
   prompt_return
   ;;
 esac
