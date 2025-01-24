@@ -899,8 +899,10 @@ function cron_restart() {
 
   systemctl restart cron
   echo "cron 服务已重新加载。"
+  echo "-----------------------------------"
   echo "当前用户的 crontab 内容:"
   crontab -l
+  echo "-----------------------------------"
 }
 
 function prompt_return() {
