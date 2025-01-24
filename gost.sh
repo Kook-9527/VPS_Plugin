@@ -849,7 +849,7 @@ function show_all_conf() {
   done
 }
 
-cron_restart() {
+function cron_restart() {
   echo -e "------------------------------------------------------------------"
   echo -e "gost定时重启任务: "
   echo -e "-----------------------------------"
@@ -857,7 +857,9 @@ cron_restart() {
   echo -e "[2] 删除gost定时重启任务"
   echo -e "-----------------------------------"
   read -p "请选择: " numcron
-  if [ "$numcron" == "1" ]; then
+
+  case "$numcron" in
+  1)
     echo -e "------------------------------------------------------------------"
     echo -e "gost定时重启任务类型: "
     echo -e "-----------------------------------"
@@ -865,26 +867,49 @@ cron_restart() {
     echo -e "[2] 每日？点重启"
     echo -e "-----------------------------------"
     read -p "请选择: " numcrontype
+
     if [ "$numcrontype" == "1" ]; then
-      echo -e "-----------------------------------"
       read -p "每？小时重启: " cronhr
-      echo "0 */$cronhr * * * root /usr/bin/systemctl restart gost" >>/etc/crontab
-      echo -e "定时重启设置成功！"
+      if [[ $cronhr =~ ^[0-9]+$ && $cronhr -gt 0 ]]; then
+        (crontab -l 2>/dev/null; echo "0 */$cronhr * * * /usr/bin/systemctl restart gost") | crontab -
+        echo "定时重启任务已添加，每 $cronhr 小时重启一次。"
+      else
+        echo "输入无效，请输入正整数。"
+      fi
     elif [ "$numcrontype" == "2" ]; then
-      echo -e "-----------------------------------"
       read -p "每日？点重启: " cronhr
-      echo "0 $cronhr * * * root /usr/bin/systemctl restart gost" >>/etc/crontab
-      echo -e "定时重启设置成功！"
+      if [[ $cronhr =~ ^[0-9]+$ && $cronhr -ge 0 && $cronhr -lt 24 ]]; then
+        (crontab -l 2>/dev/null; echo "0 $cronhr * * * /usr/bin/systemctl restart gost") | crontab -
+        echo "定时重启任务已添加，每日 $cronhr 点重启一次。"
+      else
+        echo "输入无效，请输入 0-23 范围内的数字。"
+      fi
     else
-      echo "输入错误，请重试"
-      exit
+      echo "输入无效，请重新选择。"
     fi
-  elif [ "$numcron" == "2" ]; then
-    sed -i "/gost/d" /etc/crontab
-    echo -e "定时重启任务删除完成！"
+    ;;
+  2)
+    crontab -l 2>/dev/null | grep -v "/usr/bin/systemctl restart gost" | crontab -
+    echo "定时重启任务已删除。"
+    ;;
+  *)
+    echo "输入无效，请重新选择。"
+    ;;
+  esac
+
+  systemctl restart cron
+  echo "cron 服务已重新加载。"
+  echo "当前用户的 crontab 内容:"
+  crontab -l
+}
+
+function prompt_return() {
+  echo "*****回车返回脚本*****"
+  read -r
+  if [[ $? -eq 0 ]]; then
+    exec ./gost.sh
   else
-    echo "输入错误，请重试"
-    exit
+    echo "读取失败或中断，手动重新运行脚本。"
   fi
 }
 
