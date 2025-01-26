@@ -796,7 +796,8 @@ function writeconf() {
   done
 }
 function show_all_conf() {
-  echo -e && echo "                      GOST 配置                        "
+  echo -e && echo "--------------------------------------------------------"
+  echo -e "                      GOST 配置                        "
   echo -e "--------------------------------------------------------"
   echo -e "序号|方法\t    |本地端口\t|目的地地址:目的地端口"
   echo -e "--------------------------------------------------------"
@@ -1002,7 +1003,6 @@ case "$num" in
   conflast
   systemctl restart gost
   echo -e "配置已生效，当前配置如下"
-  echo -e "--------------------------------------------------------"
   show_all_conf
   prompt_return
   ;;
