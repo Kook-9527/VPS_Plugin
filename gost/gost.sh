@@ -122,7 +122,7 @@ function Install_ct() {
     rm -rf "$(pwd)"/gost
     rm -rf "$(pwd)"/gost.service
     rm -rf "$(pwd)"/config.json
-    echo "*******回车返回脚本*******"
+    echo  && echo "*******回车返回脚本*******" && echo
     read -r
     if [[ $? -eq 0 ]]; then
       exec bash gost.sh
@@ -135,7 +135,7 @@ function Install_ct() {
     rm -rf "$(pwd)"/gost.service
     rm -rf "$(pwd)"/config.json
     rm -rf "$(pwd)"/gost.sh
-    echo "*******回车返回脚本*******"
+    echo  && echo "*******回车返回脚本*******" && echo
     read -r
     if [[ $? -eq 0 ]]; then
       exec bash gost.sh
@@ -161,7 +161,7 @@ function Restart_ct() {
 }
 
 function prompt_return() {
-  echo "*******回车返回脚本*******"
+  echo  && echo "*******回车返回脚本*******" && echo
   read -r
   if [[ $? -eq 0 ]]; then
     exec bash gost.sh
@@ -906,7 +906,7 @@ function cron_restart() {
 }
 
 function prompt_return() {
-  echo "*******回车返回脚本*******"
+  echo  && echo "*******回车返回脚本*******" && echo
   read -r
   if [[ $? -eq 0 ]]; then
     exec bash gost.sh
