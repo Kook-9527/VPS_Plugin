@@ -797,7 +797,7 @@ function writeconf() {
 }
 function show_all_conf() {
   echo -e && echo "--------------------------------------------------------"
-  echo -e "                      GOST 配置                        "
+  echo -e "                      Gost 配置                        "
   echo -e "--------------------------------------------------------"
   echo -e "序号|方法\t    |本地端口\t|目的地地址:目的地端口"
   echo -e "--------------------------------------------------------"
@@ -943,7 +943,7 @@ update_sh() {
 update_sh
 echo -e "┌─────────────────────────────────────────────────────────────┐"
 echo -e "│                                                             │"
-echo -e "│        Gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}丨gost版本v2.11.5        │"
+echo -e "│        Gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}丨Gost版本v2.11.5        │"
 echo -e "│                                                             │"
 echo -e "├────── 修改by：Kook9527丨基于KANIKIG的EasyGost脚本修改 ──────┤"
 echo -e "└─────────────────────────────────────────────────────────────┘"
