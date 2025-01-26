@@ -122,7 +122,7 @@ function Install_ct() {
     rm -rf "$(pwd)"/gost
     rm -rf "$(pwd)"/gost.service
     rm -rf "$(pwd)"/config.json
-    echo  && echo "*******回车返回脚本*******" && echo
+    echo && echo "*******回车返回脚本*******" && echo
     read -r
     if [[ $? -eq 0 ]]; then
       exec bash gost.sh
@@ -135,7 +135,7 @@ function Install_ct() {
     rm -rf "$(pwd)"/gost.service
     rm -rf "$(pwd)"/config.json
     rm -rf "$(pwd)"/gost.sh
-    echo  && echo "*******回车返回脚本*******" && echo
+    echo && echo "*******回车返回脚本*******" && echo
     read -r
     if [[ $? -eq 0 ]]; then
       exec bash gost.sh
@@ -161,7 +161,7 @@ function Restart_ct() {
 }
 
 function prompt_return() {
-  echo  && echo "*******回车返回脚本*******" && echo
+  echo && echo "*******回车返回脚本*******" && echo
   read -r
   if [[ $? -eq 0 ]]; then
     exec bash gost.sh
@@ -796,7 +796,7 @@ function writeconf() {
   done
 }
 function show_all_conf() {
-  echo -e "                      GOST 配置                        "
+  echo -e && echo "                      GOST 配置                        "
   echo -e "--------------------------------------------------------"
   echo -e "序号|方法\t    |本地端口\t|目的地地址:目的地端口"
   echo -e "--------------------------------------------------------"
@@ -898,7 +898,7 @@ function cron_restart() {
   esac
 
   systemctl restart cron
-  echo -e "------------------------------------------------------------------"
+  echo -e && echo "------------------------------------------------------------------"
   echo -e "           定时任务已重新加载，以下为当前用户的所有定时内容:"
   echo -e "------------------------------------------------------------------"
   crontab -l
@@ -906,7 +906,7 @@ function cron_restart() {
 }
 
 function prompt_return() {
-  echo  && echo "*******回车返回脚本*******" && echo
+  echo && echo "*******回车返回脚本*******" && echo
   read -r
   if [[ $? -eq 0 ]]; then
     exec bash gost.sh
