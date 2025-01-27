@@ -872,7 +872,7 @@ function cron_restart() {
     if [ "$numcrontype" == "1" ]; then
       read -p "每？小时重启: " cronhr
       if [[ $cronhr =~ ^[0-9]+$ && $cronhr -gt 0 ]]; then
-        (crontab -l 2>/dev/null; echo "0 */$cronhr * * * root /usr/bin/systemctl restart gost") | crontab -
+        (crontab -l 2>/dev/null; echo "0 */$cronhr * * * /usr/bin/systemctl restart gost") | crontab -
         echo "定时重启任务已添加，每 $cronhr 小时重启一次。"
       else
         echo "输入无效，请输入正整数。"
@@ -880,7 +880,7 @@ function cron_restart() {
     elif [ "$numcrontype" == "2" ]; then
       read -p "每日？点重启: " cronhr
       if [[ $cronhr =~ ^[0-9]+$ && $cronhr -ge 0 && $cronhr -lt 24 ]]; then
-        (crontab -l 2>/dev/null; echo "0 $cronhr * * * root /usr/bin/systemctl restart gost") | crontab -
+        (crontab -l 2>/dev/null; echo "0 $cronhr * * * /usr/bin/systemctl restart gost") | crontab -
         echo "定时重启任务已添加，每日 $cronhr 点重启一次。"
       else
         echo "输入无效，请输入 0-23 范围内的数字。"
