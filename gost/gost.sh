@@ -93,7 +93,7 @@ function Install_ct() {
   check_sys
   # check_new_ver
   echo -e "若为国内机器&无V4环境机器建议使用镜像加速下载"
-  read -e -p "是否使用？[y/n]:" addyn
+  read -e -p "是否使用？[y/n 默认:y]:" addyn
   [[ -z ${addyn} ]] && addyn="y"
   if [[ ${addyn} == [Yy] ]]; then
     rm -rf gost-linux-"$bit"-"$ct_new_ver".gz
