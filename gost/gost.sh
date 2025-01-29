@@ -94,7 +94,7 @@ function Install_ct() {
   # check_new_ver
   echo -e "若为国内机器&无V4环境机器建议使用镜像加速下载"
   read -e -p "是否使用？[y/n]:" addyn
-  [[ -z ${addyn} ]] && addyn="n"
+  [[ -z ${addyn} ]] && addyn="y"
   if [[ ${addyn} == [Yy] ]]; then
     rm -rf gost-linux-"$bit"-"$ct_new_ver".gz
     wget --no-check-certificate https://proxy.lblog.net/https://github.com/ginuerzh/gost/releases/download/v"$ct_new_ver"/gost-linux-"$bit"-"$ct_new_ver".gz
