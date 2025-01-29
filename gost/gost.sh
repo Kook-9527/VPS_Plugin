@@ -92,7 +92,7 @@ function Install_ct() {
   check_file
   check_sys
   # check_new_ver
-  echo -e "若为国内机器建议使用大陆镜像加速下载"
+  echo -e "若为国内机器&海外纯V6机器建议使用镜像加速下载"
   read -e -p "是否使用？[y/n]:" addyn
   [[ -z ${addyn} ]] && addyn="n"
   if [[ ${addyn} == [Yy] ]]; then
