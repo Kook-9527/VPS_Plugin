@@ -4860,7 +4860,7 @@ echo -e "║${CYAN} [11]${NC} ShadowTLS                         ${CYAN} [12]${NC
 echo -e "║${CYAN} [13]${NC} Shadowsocks                       ${CYAN} [14]${NC}  WireGuard                ║"
 echo -e "║${CYAN} [15]${NC} 查看节点信息                      ${CYAN} [16]${NC}  更新内核                 ║"
 echo -e "║${CYAN} [17]${NC} 更新脚本                          ${CYAN} [18]${NC}  更新证书                 ║"
-echo -e "║${CYAN} [19]${NC} 重启服务                          ${CYAN} [20]${NC}  节点管理                 ║"
+echo -e "║${CYAN} [19]${NC} 重启服务                          ${CYAN} [20]${NC}  删除节点                 ║"
 echo -e "║${CYAN} [21]${NC} 卸载                              ${CYAN} [0]${NC}   退出                     ║"
 echo "╚════════════════════════════════════════════════════════════════════════╝"
 
