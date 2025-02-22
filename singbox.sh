@@ -4591,7 +4591,7 @@ function check_wireguard_config() {
 }
 
 function Update_Script() {
-    wget -O /root/singbox.sh https://raw.githubusercontent.com/qiuxiuya/qiuxiuya/main/VPS/singbox.sh
+    wget -O /root/singbox.sh https://raw.githubusercontent.com/Kook-9527/VPS_Plugin/refs/heads/main/singbox.sh
     chmod +x /root/singbox.sh 
 }
 
