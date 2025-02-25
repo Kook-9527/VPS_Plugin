@@ -4848,7 +4848,7 @@ function Update_certificate() {
 function main_menu() {
 echo "╔════════════════════════════════════════════════════════════════════════╗"
 echo -e "║ ${CYAN}作者${NC}： Mr. xiao                                                        ║"
-echo -e "║ ${CYAN} Version：1.2       原作者已删库（ ║"
+echo -e "║ ${CYAN} Version：1.2       原作者已删库                                       ║"
 echo "╠════════════════════════════════════════════════════════════════════════╣"
 echo "║ 请选择要执行的操作：                                                   ║"
 echo -e "║${CYAN} [1]${NC}  SOCKS                             ${CYAN} [2]${NC}   Direct                   ║"
