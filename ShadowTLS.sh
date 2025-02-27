@@ -219,7 +219,7 @@ EOF
         # 重新加载 systemd 配置并重启服务
         echo "重载 systemd 配置并重启服务..."
         systemctl daemon-reload
-        systemctl enable --now shadow-tls
+        systemctl restart shadow-tls
 
         echo -e "———————————————————————————————————————"
         echo "ShadowTLSv3 端口:  $TLS_PORT"
