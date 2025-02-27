@@ -945,7 +945,7 @@ echo -e "┌──────────────────────�
 echo -e "│                                                             │"
 echo -e "│        Gost 一键安装配置脚本${Red_font_prefix}[${shell_version}]${Font_color_suffix}丨Gost版本v2.11.5        │"
 echo -e "│                                                             │"
-echo -e "├────── 修改by：Kook9527丨基于KANIKIG的EasyGost脚本修改 ──────┤"
+echo -e "├────── 修改by：Kook-9527丨基于KANIKIG的EasyGost脚本修改──────┤"
 echo -e "└─────────────────────────────────────────────────────────────┘"
 echo -e "特性: (1)本脚本采用systemd及gost配置文件对gost进行管理"
 echo -e "      (2)能够在不借助其他工具(如screen)的情况下实现多条转发规则同时生效"
