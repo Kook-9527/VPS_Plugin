@@ -178,6 +178,11 @@ EOF
         # 修改配置
         echo "修改 ShadowTLSv3 配置..."
 
+        # 手动输入原来节点的端口
+        while [[ -z "$SERVER_PORT" ]]; do
+            read -p "请输入原来节点的端口: " SERVER_PORT
+        done
+
         # 提示用户设置 ShadowTLSv3 端口，按回车则随机生成
         read -p "请设置 ShadowTLSv3 端口（按回车则随机生成）: " TLS_PORT
         TLS_PORT=${TLS_PORT:-$(shuf -i 20000-65000 -n 1)}  # 随机生成端口
