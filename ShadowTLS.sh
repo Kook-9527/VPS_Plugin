@@ -23,7 +23,7 @@ fi
 # 显示主菜单
 echo -e "┌─────────────────────────────────────────────────────────────┐"
 echo -e "│                                                             │"
-echo -e "│          ShadowTLSv3一键安装脚本  by：Kook-9527             │"
+echo -e "│       ShadowTLSv3一键安装脚本[v1.1]  by：Kook-9527          │"
 echo -e "│                                                             │"
 echo -e "└─────────────────────────────────────────────────────────────┘"
 echo -e "————————————————————"
@@ -107,6 +107,7 @@ Type=simple
 User=root
 Restart=on-failure
 RestartSec=5s
+Environment=MONOIO_FORCE_LEGACY_DRIVER=1
 ExecStartPre=/bin/sh -c ulimit -n 51200
 ExecStart=shadow-tls --fastopen --v3 --strict server --wildcard-sni=authed --listen [::]:$TLS_PORT --server 127.0.0.1:$SERVER_PORT --tls $FAKE_DOMAIN:443 --password $PASSWORD
 
@@ -121,9 +122,11 @@ EOF
 
         echo -e "安装并启动 ShadowTLSv3 完成！\n"
         echo -e "———————————————————————————————————————"
-        echo "ShadowTLSv3 端口:  $TLS_PORT"
-        echo "ShadowTLSv3 密码:  $PASSWORD"
-        echo "ShadowTLSv3 伪装域名:  $FAKE_DOMAIN"
+        echo -e "         ShadowTLSv3 相关信息"
+        echo -e "———————————————————————————————————————"
+        echo "端口:  $TLS_PORT"
+        echo "密码:  $PASSWORD"
+        echo "伪装域名:  $FAKE_DOMAIN"
         echo -e "———————————————————————————————————————"
         ;;
     2)
@@ -209,6 +212,7 @@ Type=simple
 User=root
 Restart=on-failure
 RestartSec=5s
+Environment=MONOIO_FORCE_LEGACY_DRIVER=1
 ExecStartPre=/bin/sh -c ulimit -n 51200
 ExecStart=shadow-tls --fastopen --v3 --strict server --wildcard-sni=authed --listen [::]:$TLS_PORT --server 127.0.0.1:$SERVER_PORT --tls $FAKE_DOMAIN:443 --password $PASSWORD
 
@@ -221,6 +225,8 @@ EOF
         systemctl daemon-reload
         systemctl enable --now shadow-tls
 
+        echo -e "———————————————————————————————————————"
+        echo -e "         ShadowTLSv3 相关信息"
         echo -e "———————————————————————————————————————"
         echo "ShadowTLSv3 端口:  $TLS_PORT"
         echo "ShadowTLSv3 密码:  $PASSWORD"
