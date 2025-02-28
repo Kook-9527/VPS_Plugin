@@ -90,8 +90,8 @@ case $choice in
         PASSWORD=${PASSWORD:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}
 
         # 伪装域名，按回车使用默认值
-        read -p "请输入支持TLS1.3的伪装域名（按回车则默认为 mp.weixin.qq.com）: " FAKE_DOMAIN
-        FAKE_DOMAIN=${FAKE_DOMAIN:-"mp.weixin.qq.com"}
+        read -p "请输入支持TLS1.3的伪装域名（默认 gateway.icloud.com ）: " FAKE_DOMAIN
+        FAKE_DOMAIN=${FAKE_DOMAIN:-"gateway.icloud.com"}
 
         # 创建并配置 systemd 服务
         echo "配置 systemd 服务..."
@@ -192,8 +192,8 @@ EOF
         PASSWORD=${PASSWORD:-$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)}
 
         # 伪装域名，按回车使用默认值
-        read -p "请输入支持TLS1.3的伪装域名（按回车则默认为 mp.weixin.qq.com）: " FAKE_DOMAIN
-        FAKE_DOMAIN=${FAKE_DOMAIN:-"mp.weixin.qq.com"}
+        read -p "请输入支持TLS1.3的伪装域名（默认 gateway.icloud.com ）: " FAKE_DOMAIN
+        FAKE_DOMAIN=${FAKE_DOMAIN:-"gateway.icloud.com"}
 
         # 更新 systemd 服务文件
         echo "更新 systemd 服务..."
