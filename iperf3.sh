@@ -46,9 +46,9 @@ function client_test() {
         apt install -y iperf3
     fi
 
-    read -p "请输入服务端 IP 地址: " SERVER_IP
+    read -p "请输入服务端 IPv4/IPv6 地址: " SERVER_IP
     if [[ -z "$SERVER_IP" ]]; then
-        echo "IP 地址不能为空。"
+        echo "IP地址不能为空。"
         return
     fi
     echo "开始向 $SERVER_IP 测试 TCP 带宽（端口：$PORT）..."
@@ -60,9 +60,9 @@ function show_menu() {
     echo " iperf3 一键管理脚本"
     echo " 默认端口：$PORT"
     echo "=============================="
-    echo "1. 安装并启动 iperf3 服务端"
+    echo "1. 安装并启动iperf3服务端"
     echo "2. 客户端测速（连接远程服务器）"
-    echo "3. 卸载 iperf3"
+    echo "3. 卸载iperf3"
     echo "0. 退出"
     echo "=============================="
     read -p "请输入选项 [0-3]: " choice
