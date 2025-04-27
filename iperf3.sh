@@ -57,7 +57,7 @@ function client_test() {
 
 function show_menu() {
     echo "=============================="
-    echo "    【iperf3 一键管理脚本】"
+    echo "   【iperf3 一键管理脚本】"
     echo "       默认端口：$PORT"
     echo "=============================="
     echo "1. 安装并启动iperf3服务端"
