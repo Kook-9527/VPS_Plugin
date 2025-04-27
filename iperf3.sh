@@ -57,12 +57,12 @@ function client_test() {
 
 function show_menu() {
     echo "=============================="
-    echo " iperf3 一键管理脚本"
-    echo " 默认端口：$PORT"
+    echo "    【iperf3 一键管理脚本】"
+    echo "       默认端口：$PORT"
     echo "=============================="
     echo "1. 安装并启动iperf3服务端"
     echo "2. 开始测速（本机⇢其它服务端）"
-    echo "3. 一键卸载iperf3服务端"
+    echo "3. 卸载iperf3服务端"
     echo "0. 退出"
     echo "=============================="
     read -p "请输入选项 [0-3]: " choice
