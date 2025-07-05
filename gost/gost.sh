@@ -155,6 +155,9 @@ function Uninstall_ct() {
 
 function Restart_ct() {
   rm -rf /etc/gost/config.json
+  confstart
+  writeconf
+  conflast
   systemctl restart gost
   echo "已重读配置并重启"
   prompt_return
