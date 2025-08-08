@@ -32,6 +32,7 @@ show_menu() {
     echo "          欢迎使用Realm一键转发脚本"
     echo " ———————————— Realm版本v2.7.0 ————————————"
     echo "     修改by：Ois    修改日期：2025/04/16"
+    echo "     仓库：https://github.com/shiyi11yi/EZRealm"
     echo " "
     echo "—————————————————————"
     echo " 1. 安装 Realm"
