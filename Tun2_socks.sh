@@ -15,7 +15,7 @@ SERVICE_FILE="/etc/systemd/system/tun2socks.service"
 BINARY_PATH="$INSTALL_DIR/tun2socks"
 
 # 获取下载链接
-DOWNLOAD_URL=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep "browser_download_url" | grep "linux-x86_64" | cut -d '"' -f 4)
+DOWNLOAD_URL=$(curl -s https://proxy.lblog.net/https://api.github.com/repos/$REPO/releases/latest | grep "browser_download_url" | grep "linux-x86_64" | cut -d '"' -f 4)
 
 if [ -z "$DOWNLOAD_URL" ]; then
     echo "未找到下载链接，可能网络问题或项目结构改变。"
