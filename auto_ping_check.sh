@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# Ping Monitor 管理脚本（IPv4 + IPv6 双栈）
+# Ping Monitor 管理脚本（IPv4 + IPv6 双栈，支持交互式端口输入）
 # 功能：
 #   - 持续 ping IPv6 目标地址
 #   - 延迟异常或中断时封禁端口（IPv4 + IPv6）
@@ -11,12 +11,12 @@
 set -e
 
 # =========================
-# 基础参数配置区
+# 默认参数
 # =========================
-PORT=55555                         # 本机监听端口（自行修改）
-TARGET_IP="2606:4700:4700::1111"   # 用于探测的对端IP地址
-LATENCY_THRESHOLD=30               # 延迟阈值（毫秒，ms）
-BLOCK_DURATION=300                 # 端口最短阻断时间（秒）
+DEFAULT_PORT=55555                   # 默认监听端口
+TARGET_IP="2606:4700:4700::1111"     # IPv6 对端地址
+LATENCY_THRESHOLD=10                 # 延迟阈值（ms）
+BLOCK_DURATION=300                   # 阻断最短时间（秒）
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
@@ -79,11 +79,22 @@ install_iptables() {
 }
 
 # ============================================
-# 安装监控服务
+# 安装监控服务（支持交互式端口输入）
 # ============================================
 install_monitor() {
     echo "📥 开始安装 ping-monitor..."
+
     install_iptables
+
+    # 交互式输入端口
+    read -rp "请输入要监控的端口 [默认 $DEFAULT_PORT]: " USER_PORT
+    if [[ -z "$USER_PORT" ]]; then
+        PORT="$DEFAULT_PORT"
+    else
+        PORT="$USER_PORT"
+    fi
+
+    echo "⚙️ 监控端口设置为: $PORT"
 
     # ----------------------------
     # 写入实际运行的监控脚本
@@ -101,7 +112,6 @@ BLOCK_DURATION=$BLOCK_DURATION
 port_blocked=false
 block_start_time=0
 
-# 清理端口规则（IPv4 + IPv6）
 clean_rules() {
     for proto in iptables ip6tables; do
         while \$proto -C INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT &>/dev/null; do
@@ -113,13 +123,11 @@ clean_rules() {
     done
 }
 
-# 判断端口是否封禁
 is_port_blocked() {
     iptables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null || \
     ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null
 }
 
-# 封禁端口（IPv4 + IPv6）
 block_port() {
     if ! is_port_blocked; then
         clean_rules
@@ -131,7 +139,6 @@ block_port() {
     fi
 }
 
-# 解封端口（IPv4 + IPv6）
 unblock_port() {
     if is_port_blocked; then
         clean_rules
@@ -143,7 +150,6 @@ unblock_port() {
     fi
 }
 
-# 主循环
 while true; do
     ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
     latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
