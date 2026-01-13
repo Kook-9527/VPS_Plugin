@@ -73,11 +73,7 @@ install_monitor() {
 
     # 交互式输入端口
     read -rp "请输入要监控的端口 [默认 $DEFAULT_PORT]: " USER_PORT
-    if [[ -z "$USER_PORT" ]]; then
-        PORT="$DEFAULT_PORT"
-    else
-        PORT="$USER_PORT"
-    fi
+    PORT="${USER_PORT:-$DEFAULT_PORT}"
 
     echo "⚙️ 监控端口设置为: $PORT"
 
@@ -94,15 +90,16 @@ LOCAL_PORT=$PORT
 LATENCY_THRESHOLD=$LATENCY_THRESHOLD
 BLOCK_DURATION=$BLOCK_DURATION
 
+# 阻断状态
 port_blocked=false
 block_start_time=0
 
-# 连续高延迟 / ping 失败计数
+# 连续异常计数（只在未阻断时生效）
 HIGH_LATENCY_COUNT=0
 REQUIRED_CONSECUTIVE=3
 
 # ----------------------------
-# 清理所有冲突规则
+# 清理端口规则
 # ----------------------------
 clean_rules() {
     for proto in iptables ip6tables; do
@@ -120,25 +117,20 @@ is_port_blocked() {
 }
 
 block_port() {
-    if ! is_port_blocked; then
-        clean_rules
-        iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-        ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-        echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次延迟异常，已关闭端口 \$LOCAL_PORT"
-        port_blocked=true
-        block_start_time=\$(date +%s)
-    fi
+    clean_rules
+    iptables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
+    ip6tables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
+    echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次异常，已关闭端口 \$LOCAL_PORT"
+    port_blocked=true
+    block_start_time=\$(date +%s)
 }
 
 unblock_port() {
-    if is_port_blocked; then
-        # 仅删除 DROP 规则，恢复 INPUT 默认策略
-        clean_rules
-        echo "\$(date '+%F %T') ✅ 延迟恢复正常，已开放端口 \$LOCAL_PORT"
-        port_blocked=false
-        block_start_time=0
-        HIGH_LATENCY_COUNT=0
-    fi
+    clean_rules
+    echo "\$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 \$LOCAL_PORT"
+    port_blocked=false
+    block_start_time=0
+    HIGH_LATENCY_COUNT=0
 }
 
 # ----------------------------
@@ -148,33 +140,36 @@ while true; do
     ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
     latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
 
-    if [ -z "\$latency" ]; then
-        echo "\$(date '+%F %T') ❌ 无法 ping 通 \$TARGET_IP"
-        HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
-    else
-        latency_int=\${latency%.*}
-        echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
-
-        if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
+    # ========================
+    # 未阻断状态：统计连续异常
+    # ========================
+    if ! \$port_blocked; then
+        if [ -z "\$latency" ]; then
             HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
-            echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
+            echo "\$(date '+%F %T') ❌ ping 失败（连续 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE）"
         else
-            HIGH_LATENCY_COUNT=0
+            latency_int=\${latency%.*}
+            echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
+            if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
+                HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
+                echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
+            else
+                HIGH_LATENCY_COUNT=0
+            fi
         fi
-    fi
 
-    # 连续达到阈值才阻断
-    if ! \$port_blocked && [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
-        block_port
-    fi
+        if [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
+            block_port
+        fi
 
-    # 阻断状态下，时间到且延迟恢复才解封
-    if \$port_blocked; then
+    # ========================
+    # 已阻断状态：只判断时间
+    # ========================
+    else
         now=\$(date +%s)
         elapsed=\$((now - block_start_time))
-        if [ \$elapsed -ge \$BLOCK_DURATION ] && \
-           [ -n "\$latency" ] && \
-           [ "\${latency%.*}" -lt "\$LATENCY_THRESHOLD" ]; then
+
+        if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
             unblock_port
         else
             echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
@@ -245,7 +240,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.0"
+    echo " Ping Monitor 管理脚本 v1.1"
     echo " by：Kook-9527"
     echo "============================="
     echo "1) 安装并启动监控"
