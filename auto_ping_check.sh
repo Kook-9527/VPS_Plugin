@@ -16,7 +16,7 @@ set -e
 DEFAULT_PORT=55555                   # 默认监听端口
 TARGET_IP="2606:4700:4700::1111"     # IPv6 对端地址
 LATENCY_THRESHOLD=50                 # 延迟阈值（ms）
-BLOCK_DURATION=300                   # 阻断最短时间（秒）
+BLOCK_DURATION=300                   # 阻断时间（秒）
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
