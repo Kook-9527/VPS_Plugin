@@ -15,7 +15,7 @@ set -e
 # =========================
 DEFAULT_PORT=55555                   # 默认监听端口
 TARGET_IP="2606:4700:4700::1111"     # IPv6 对端地址
-LATENCY_THRESHOLD=20                 # 延迟阈值（ms）
+LATENCY_THRESHOLD=50                 # 延迟阈值（ms）
 BLOCK_DURATION=120                   # 阻断时间（秒）
 
 SERVICE_NAME="ping-monitor.service"
@@ -132,9 +132,8 @@ block_port() {
 
 unblock_port() {
     if is_port_blocked; then
-        clean_rules  # 彻底删除 DROP/ACCEPT
-        iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
-        ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
+        # 仅删除 DROP 规则，恢复 INPUT 默认策略
+        clean_rules
         echo "\$(date '+%F %T') ✅ 延迟恢复正常，已开放端口 \$LOCAL_PORT"
         port_blocked=false
         block_start_time=0
@@ -164,17 +163,21 @@ while true; do
         fi
     fi
 
+    # 连续达到阈值才阻断
     if ! \$port_blocked && [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
         block_port
     fi
 
+    # 阻断状态下，时间到且延迟恢复才解封
     if \$port_blocked; then
         now=\$(date +%s)
         elapsed=\$((now - block_start_time))
-        if [ \$elapsed -ge \$BLOCK_DURATION ] && [ -n "\$latency" ] && [ "\$latency_int" -lt "\$LATENCY_THRESHOLD" ]; then
+        if [ \$elapsed -ge \$BLOCK_DURATION ] && \
+           [ -n "\$latency" ] && \
+           [ "\${latency%.*}" -lt "\$LATENCY_THRESHOLD" ]; then
             unblock_port
         else
-            echo "\$(date '+%F %T') ⏳ 端口阻断中，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
+            echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
         fi
     fi
 
