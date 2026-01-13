@@ -208,7 +208,9 @@ EOF
     systemctl daemon-reload
     systemctl enable --now "$SERVICE_NAME"
 
-    echo "✅ 安装完成：服务已启动 (systemctl status $SERVICE_NAME 查看状态)"
+    echo "✅ 安装完成：服务已启动"
+    echo "✅ 状态命令行：systemctl status $SERVICE_NAME"
+    echo "✅ 日志命令行：journalctl -u ping-monitor.service -f"
 }
 
 # ============================================
