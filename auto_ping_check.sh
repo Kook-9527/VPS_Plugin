@@ -246,6 +246,7 @@ remove_monitor() {
 show_menu() {
     echo "============================="
     echo " Ping Monitor 管理脚本 v1.0"
+    echo " by：Kook-9527"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) 清理并复原"
