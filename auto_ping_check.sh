@@ -133,7 +133,7 @@ block_port() {
         clean_rules
         iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
         ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-        echo "\$(date '+%F %T') ⚠️ 网络异常，封禁端口 \$LOCAL_PORT"
+        echo "\$(date '+%F %T') ⚠️ 延迟超过 \${LATENCY_THRESHOLD}ms 或无法 ping，已关闭端口 \$LOCAL_PORT"
         port_blocked=true
         block_start_time=\$(date +%s)
     fi
@@ -144,7 +144,7 @@ unblock_port() {
         clean_rules
         iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
         ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
-        echo "\$(date '+%F %T') ✅ 网络恢复，解封端口 \$LOCAL_PORT"
+        echo "\$(date '+%F %T') ✅ 延迟恢复正常，已开放端口 \$LOCAL_PORT"
         port_blocked=false
         block_start_time=0
     fi
@@ -159,7 +159,7 @@ while true; do
         block_port
     else
         latency_int=\${latency%.*}
-        echo "\$(date '+%F %T') ℹ️ 当前延迟：\${latency}ms"
+        echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
 
         if \$port_blocked; then
             now=\$(date +%s)
@@ -168,10 +168,10 @@ while true; do
                 if [ "\$latency_int" -lt "\$LATENCY_THRESHOLD" ]; then
                     unblock_port
                 else
-                    echo "\$(date '+%F %T') ⏳ 延迟仍高，继续封禁"
+                    echo "\$(date '+%F %T') ⏳ 延迟仍高于 \${LATENCY_THRESHOLD}ms，继续阻断端口"
                 fi
             else
-                echo "\$(date '+%F %T') ⏳ 封禁中，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
+                echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
             fi
         else
             if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
@@ -199,6 +199,8 @@ Type=simple
 ExecStart=$SCRIPT_PATH
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -207,7 +209,7 @@ EOF
     systemctl daemon-reload
     systemctl enable --now "$SERVICE_NAME"
 
-    echo "✅ 安装完成，服务已启动"
+    echo "✅ 安装完成：服务已启动 (systemctl status $SERVICE_NAME 查看状态)"
 }
 
 # ============================================
