@@ -201,7 +201,7 @@ EOF
 
     echo "✅ 安装完成：服务已启动"
     echo "✅ 状态命令行：systemctl status $SERVICE_NAME"
-    echo "✅ 日志命令行：journalctl -u ping-monitor.service -f"
+    echo "✅ 日志命令行：journalctl -u $SERVICE_NAME -f"
 }
 
 # ============================================
