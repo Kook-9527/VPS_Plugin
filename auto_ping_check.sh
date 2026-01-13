@@ -1,19 +1,18 @@
 #!/bin/bash
 # ============================================
-# Ping Monitor 管理脚本
+# Ping Monitor 管理脚本（IPv4 + IPv6 双栈）
 # 功能：
-#   - 持续 ping 目标IP地址
-#   - 延迟过高或中断时自动封禁本机端口
+#   - 持续 ping IPv6 目标地址
+#   - 延迟异常或中断时封禁端口（IPv4 + IPv6）
 #   - 网络恢复并稳定后自动解封
 #   - 使用 systemd 常驻运行
 # ============================================
 
 set -e
 
-# ============================================
-# 基础参数配置区（最重要）
-# ============================================
-
+# =========================
+# 基础参数配置区
+# =========================
 PORT=55555                         # 本机监听端口（TCP）
 TARGET_IP="2606:4700:4700::1111"   # 用于探测的对端IP地址
 LATENCY_THRESHOLD=10               # 延迟阈值（毫秒，ms）
@@ -40,62 +39,57 @@ detect_distro() {
 # 自动安装 iptables / ip6tables
 # ============================================
 install_iptables() {
-    if command -v ip6tables &>/dev/null; then
-        echo "✅ 已检测到 ip6tables，跳过安装"
-        return
-    fi
-
-    echo "📦 未检测到 ip6tables，开始自动安装..."
     detect_distro
 
-    case "$DISTRO_ID" in
-        ubuntu|debian)
-            apt update
-            DEBIAN_FRONTEND=noninteractive apt install -y iptables
-            ;;
-        centos|rocky|almalinux|rhel)
-            yum install -y iptables
-            ;;
-        *)
-            if echo "$DISTRO_LIKE" | grep -Eq "debian"; then
+    if ! command -v iptables &>/dev/null; then
+        echo "📦 未检测到 iptables，开始安装..."
+        case "$DISTRO_ID" in
+            ubuntu|debian)
                 apt update
                 DEBIAN_FRONTEND=noninteractive apt install -y iptables
-            elif echo "$DISTRO_LIKE" | grep -Eq "rhel|fedora"; then
+                ;;
+            centos|rocky|almalinux|rhel)
                 yum install -y iptables
-            else
-                echo "❌ 不支持的发行版，请手动安装 iptables/ip6tables"
+                ;;
+            *)
+                echo "❌ 不支持的发行版，请手动安装 iptables"
                 exit 1
-            fi
-            ;;
-    esac
-
-    if ! command -v ip6tables &>/dev/null; then
-        echo "❌ ip6tables 安装失败，终止"
-        exit 1
+                ;;
+        esac
     fi
 
-    echo "✅ ip6tables 安装完成"
+    if ! command -v ip6tables &>/dev/null; then
+        echo "📦 未检测到 ip6tables，开始安装..."
+        case "$DISTRO_ID" in
+            ubuntu|debian)
+                apt update
+                DEBIAN_FRONTEND=noninteractive apt install -y iptables
+                ;;
+            centos|rocky|almalinux|rhel)
+                yum install -y iptables
+                ;;
+            *)
+                echo "❌ 不支持的发行版，请手动安装 ip6tables"
+                exit 1
+                ;;
+        esac
+    fi
+
+    echo "✅ iptables / ip6tables 已就绪"
 }
 
 # ============================================
-# 安装并启动监控服务
+# 安装监控服务
 # ============================================
 install_monitor() {
     echo "📥 开始安装 ping-monitor..."
-
     install_iptables
 
-    # ----------------------------------------
+    # ----------------------------
     # 写入实际运行的监控脚本
-    # ----------------------------------------
+    # ----------------------------
     cat << EOF > "$SCRIPT_PATH"
 #!/bin/bash
-
-# ============================================
-# Ping Monitor 实际执行脚本
-# 由 systemd 调用，请勿直接删除
-# ============================================
-
 export LANG=C
 export LC_ALL=C
 
@@ -107,25 +101,29 @@ BLOCK_DURATION=$BLOCK_DURATION
 port_blocked=false
 block_start_time=0
 
-# 清理端口相关规则，防止重复叠加
+# 清理端口规则（IPv4 + IPv6）
 clean_rules() {
-    while ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT &>/dev/null; do
-        ip6tables -D INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
-    done
-    while ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null; do
-        ip6tables -D INPUT -p tcp --dport \$LOCAL_PORT -j DROP
+    for proto in iptables ip6tables; do
+        while \$proto -C INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT &>/dev/null; do
+            \$proto -D INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
+        done
+        while \$proto -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null; do
+            \$proto -D INPUT -p tcp --dport \$LOCAL_PORT -j DROP
+        done
     done
 }
 
-# 判断端口是否处于封禁状态
+# 判断端口是否封禁
 is_port_blocked() {
+    iptables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null || \
     ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null
 }
 
-# 封禁端口（仅在未封禁时执行）
+# 封禁端口（IPv4 + IPv6）
 block_port() {
     if ! is_port_blocked; then
         clean_rules
+        iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
         ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
         echo "\$(date '+%F %T') ⚠️ 网络异常，封禁端口 \$LOCAL_PORT"
         port_blocked=true
@@ -133,10 +131,11 @@ block_port() {
     fi
 }
 
-# 解封端口（需满足时间与延迟条件）
+# 解封端口（IPv4 + IPv6）
 unblock_port() {
     if is_port_blocked; then
         clean_rules
+        iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
         ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
         echo "\$(date '+%F %T') ✅ 网络恢复，解封端口 \$LOCAL_PORT"
         port_blocked=false
@@ -144,7 +143,7 @@ unblock_port() {
     fi
 }
 
-# 主循环：每 5 秒检测一次
+# 主循环
 while true; do
     ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
     latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
@@ -159,7 +158,6 @@ while true; do
         if \$port_blocked; then
             now=\$(date +%s)
             elapsed=\$((now - block_start_time))
-
             if [ \$elapsed -ge \$BLOCK_DURATION ]; then
                 if [ "\$latency_int" -lt "\$LATENCY_THRESHOLD" ]; then
                     unblock_port
@@ -182,12 +180,12 @@ EOF
 
     chmod +x "$SCRIPT_PATH"
 
-    # ----------------------------------------
+    # ----------------------------
     # systemd 服务文件
-    # ----------------------------------------
+    # ----------------------------
     cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
-Description=Ping Monitor - Auto Close Port $PORT
+Description=Ping Monitor - Auto Close Port $PORT (IPv4 + IPv6)
 After=network-online.target
 
 [Service]
@@ -207,7 +205,7 @@ EOF
 }
 
 # ============================================
-# 清理并完全复原
+# 清理服务和规则
 # ============================================
 remove_monitor() {
     echo "🛑 停止并清理服务..."
@@ -219,12 +217,14 @@ remove_monitor() {
 
     rm -f "$SCRIPT_PATH"
 
-    echo "🧹 清理 ip6tables 规则..."
-    while ip6tables -C INPUT -p tcp --dport $PORT -j ACCEPT &>/dev/null; do
-        ip6tables -D INPUT -p tcp --dport $PORT -j ACCEPT
-    done
-    while ip6tables -C INPUT -p tcp --dport $PORT -j DROP &>/dev/null; do
-        ip6tables -D INPUT -p tcp --dport $PORT -j DROP
+    echo "🧹 清理 iptables / ip6tables 规则..."
+    for proto in iptables ip6tables; do
+        while $proto -C INPUT -p tcp --dport $PORT -j ACCEPT &>/dev/null; do
+            $proto -D INPUT -p tcp --dport $PORT -j ACCEPT
+        done
+        while $proto -C INPUT -p tcp --dport $PORT -j DROP &>/dev/null; do
+            $proto -D INPUT -p tcp --dport $PORT -j DROP
+        done
     done
 
     echo "✅ 已完全清理并复原"
@@ -252,7 +252,7 @@ show_menu() {
 }
 
 # ============================================
-# 入口
+# 脚本入口
 # ============================================
 if [ -n "$1" ]; then
     case "$1" in
