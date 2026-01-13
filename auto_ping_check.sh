@@ -15,7 +15,7 @@ set -e
 # =========================
 PORT=55555                         # 本机监听端口（TCP）
 TARGET_IP="2606:4700:4700::1111"   # 用于探测的对端IP地址
-LATENCY_THRESHOLD=10               # 延迟阈值（毫秒，ms）
+LATENCY_THRESHOLD=30               # 延迟阈值（毫秒，ms）
 BLOCK_DURATION=300                 # 端口最短阻断时间（秒）
 
 SERVICE_NAME="ping-monitor.service"
