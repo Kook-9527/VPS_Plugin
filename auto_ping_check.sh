@@ -97,6 +97,10 @@ BLOCK_DURATION=$BLOCK_DURATION
 port_blocked=false
 block_start_time=0
 
+# 连续高延迟 / ping 失败计数
+HIGH_LATENCY_COUNT=0
+REQUIRED_CONSECUTIVE=3
+
 # ----------------------------
 # 清理所有冲突规则
 # ----------------------------
@@ -120,7 +124,7 @@ block_port() {
         clean_rules
         iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
         ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-        echo "\$(date '+%F %T') ⚠️ 延迟超过 \${LATENCY_THRESHOLD}ms 或无法 ping，已关闭端口 \$LOCAL_PORT"
+        echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次延迟异常，已关闭端口 \$LOCAL_PORT"
         port_blocked=true
         block_start_time=\$(date +%s)
     fi
@@ -134,6 +138,7 @@ unblock_port() {
         echo "\$(date '+%F %T') ✅ 延迟恢复正常，已开放端口 \$LOCAL_PORT"
         port_blocked=false
         block_start_time=0
+        HIGH_LATENCY_COUNT=0
     fi
 }
 
@@ -146,27 +151,30 @@ while true; do
 
     if [ -z "\$latency" ]; then
         echo "\$(date '+%F %T') ❌ 无法 ping 通 \$TARGET_IP"
-        block_port
+        HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
     else
         latency_int=\${latency%.*}
         echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
 
-        if \$port_blocked; then
-            now=\$(date +%s)
-            elapsed=\$((now - block_start_time))
-            if [ \$elapsed -ge \$BLOCK_DURATION ]; then
-                if [ "\$latency_int" -lt "\$LATENCY_THRESHOLD" ]; then
-                    unblock_port
-                else
-                    echo "\$(date '+%F %T') ⏳ 延迟仍高于 \${LATENCY_THRESHOLD}ms，继续阻断端口"
-                fi
-            else
-                echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
-            fi
+        if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
+            HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
+            echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
         else
-            if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
-                block_port
-            fi
+            HIGH_LATENCY_COUNT=0
+        fi
+    fi
+
+    if ! \$port_blocked && [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
+        block_port
+    fi
+
+    if \$port_blocked; then
+        now=\$(date +%s)
+        elapsed=\$((now - block_start_time))
+        if [ \$elapsed -ge \$BLOCK_DURATION ] && [ -n "\$latency" ] && [ "\$latency_int" -lt "\$LATENCY_THRESHOLD" ]; then
+            unblock_port
+        else
+            echo "\$(date '+%F %T') ⏳ 端口阻断中，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
         fi
     fi
 
