@@ -16,7 +16,7 @@ set -e
 DEFAULT_PORT=55555                   # 默认监听端口
 TARGET_IP="2606:4700:4700::1111"     # IPv6 对端地址
 LATENCY_THRESHOLD=50                 # 延迟阈值（ms）
-BLOCK_DURATION=300                   # 阻断时间（秒）
+BLOCK_DURATION=300                   # 阻断最短时间（秒）
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
@@ -41,45 +41,30 @@ detect_distro() {
 install_iptables() {
     detect_distro
 
-    if ! command -v iptables &>/dev/null; then
-        echo "📦 未检测到 iptables，开始安装..."
-        case "$DISTRO_ID" in
-            ubuntu|debian)
-                apt update
-                DEBIAN_FRONTEND=noninteractive apt install -y iptables
-                ;;
-            centos|rocky|almalinux|rhel)
-                yum install -y iptables
-                ;;
-            *)
-                echo "❌ 不支持的发行版，请手动安装 iptables"
-                exit 1
-                ;;
-        esac
-    fi
-
-    if ! command -v ip6tables &>/dev/null; then
-        echo "📦 未检测到 ip6tables，开始安装..."
-        case "$DISTRO_ID" in
-            ubuntu|debian)
-                apt update
-                DEBIAN_FRONTEND=noninteractive apt install -y iptables
-                ;;
-            centos|rocky|almalinux|rhel)
-                yum install -y iptables
-                ;;
-            *)
-                echo "❌ 不支持的发行版，请手动安装 ip6tables"
-                exit 1
-                ;;
-        esac
-    fi
+    for cmd in iptables ip6tables; do
+        if ! command -v $cmd &>/dev/null; then
+            echo "📦 未检测到 $cmd，开始安装..."
+            case "$DISTRO_ID" in
+                ubuntu|debian)
+                    apt update
+                    DEBIAN_FRONTEND=noninteractive apt install -y iptables
+                    ;;
+                centos|rocky|almalinux|rhel)
+                    yum install -y iptables
+                    ;;
+                *)
+                    echo "❌ 不支持的发行版，请手动安装 $cmd"
+                    exit 1
+                    ;;
+            esac
+        fi
+    done
 
     echo "✅ iptables / ip6tables 已就绪"
 }
 
 # ============================================
-# 安装监控服务（支持交互式端口输入）
+# 安装监控服务
 # ============================================
 install_monitor() {
     echo "📥 开始安装 ping-monitor..."
@@ -112,6 +97,9 @@ BLOCK_DURATION=$BLOCK_DURATION
 port_blocked=false
 block_start_time=0
 
+# ----------------------------
+# 清理所有冲突规则
+# ----------------------------
 clean_rules() {
     for proto in iptables ip6tables; do
         while true; do
@@ -140,7 +128,7 @@ block_port() {
 
 unblock_port() {
     if is_port_blocked; then
-        clean_rules
+        clean_rules  # 彻底删除 DROP/ACCEPT
         iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
         ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
         echo "\$(date '+%F %T') ✅ 延迟恢复正常，已开放端口 \$LOCAL_PORT"
@@ -149,6 +137,9 @@ unblock_port() {
     fi
 }
 
+# ----------------------------
+# 主循环
+# ----------------------------
 while true; do
     ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
     latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
@@ -214,7 +205,7 @@ EOF
 }
 
 # ============================================
-# 清理服务和规则（改为按行号彻底删除）
+# 清理服务和端口规则
 # ============================================
 remove_monitor() {
     echo "🛑 停止并清理服务..."
