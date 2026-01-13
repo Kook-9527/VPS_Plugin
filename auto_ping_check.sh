@@ -16,7 +16,7 @@ set -e
 DEFAULT_PORT=55555                   # 默认监听端口
 TARGET_IP="2606:4700:4700::1111"     # IPv6 对端地址
 LATENCY_THRESHOLD=50                 # 延迟阈值（ms）
-BLOCK_DURATION=120                   # 阻断时间（秒）
+BLOCK_DURATION=300                   # 阻断最短时间（秒）
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
@@ -114,11 +114,10 @@ block_start_time=0
 
 clean_rules() {
     for proto in iptables ip6tables; do
-        while \$proto -C INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT &>/dev/null; do
-            \$proto -D INPUT -p tcp --dport \$LOCAL_PORT -j ACCEPT
-        done
-        while \$proto -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null; do
-            \$proto -D INPUT -p tcp --dport \$LOCAL_PORT -j DROP
+        while true; do
+            num=\$($proto -L INPUT --line-numbers -n | grep "tcp dpt:\$LOCAL_PORT" | awk '{print \$1}' | head -n1)
+            [ -z "\$num" ] && break
+            \$proto -D INPUT \$num
         done
     done
 }
@@ -213,7 +212,7 @@ EOF
 }
 
 # ============================================
-# 清理服务和规则
+# 清理服务和规则（改为按行号彻底删除）
 # ============================================
 remove_monitor() {
     echo "🛑 停止并清理服务..."
@@ -227,11 +226,10 @@ remove_monitor() {
 
     echo "🧹 清理 iptables / ip6tables 规则..."
     for proto in iptables ip6tables; do
-        while $proto -C INPUT -p tcp --dport $PORT -j ACCEPT &>/dev/null; do
-            $proto -D INPUT -p tcp --dport $PORT -j ACCEPT
-        done
-        while $proto -C INPUT -p tcp --dport $PORT -j DROP &>/dev/null; do
-            $proto -D INPUT -p tcp --dport $PORT -j DROP
+        while true; do
+            num=$($proto -L INPUT --line-numbers -n | grep "tcp dpt:$PORT" | awk '{print $1}' | head -n1)
+            [ -z "$num" ] && break
+            $proto -D INPUT $num
         done
     done
 
