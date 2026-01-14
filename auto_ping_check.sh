@@ -70,8 +70,8 @@ tg_settings() {
         read -rp "请选择: " sub
         case "$sub" in
             1)
-                read -rp "新的 TG Bot Token: " token
-                read -rp "新的 TG Chat ID: " chat
+                read -rp "新的 TG机器人 Token: " token
+                read -rp "新的 TG账号 ID: " chat
                 read -rp "新的服务器备注: " SERVER_NAME
                 SERVER_NAME="${SERVER_NAME:-未命名服务器}"
                 sed -i "s|^TG_BOT_TOKEN=.*|TG_BOT_TOKEN=\"$token\"|" "$SCRIPT_PATH"
@@ -98,8 +98,8 @@ install_monitor() {
     read -rp "是否启用 Telegram 通知？[Y/n]: " c
     if [[ -z "$c" || "$c" =~ ^[Yy]$ ]]; then
         TG_ENABLE=1
-        read -rp "TG Bot Token: " TG_BOT_TOKEN
-        read -rp "TG Chat ID: " TG_CHAT_ID
+        read -rp "TG机器人 Token: " TG_BOT_TOKEN
+        read -rp "TG账号 ID: " TG_CHAT_ID
         read -rp "请输入本服务器备注（如 小鸡1）: " SERVER_NAME
         SERVER_NAME="${SERVER_NAME:-未命名服务器}"
     else
@@ -152,8 +152,8 @@ send_tg_block() {
     time_now=\$(date '+%F %T')
     curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
         -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 主机名：\$SERVER_NAME
-⚠️ 端口：\$LOCAL_PORT 已阻断
+        -d text="💻 名称：\$SERVER_NAME
+⚠️ 状态：\$LOCAL_PORT 已阻断
 ⏰ 时间：\$time_now" >/dev/null
 }
 
@@ -163,8 +163,8 @@ send_tg_unblock() {
     time_now=\$(date '+%F %T')
     curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
         -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 主机名：\$SERVER_NAME
-✅ 端口：\$LOCAL_PORT 已恢复
+        -d text="💻 名称：\$SERVER_NAME
+✅ 状态：\$LOCAL_PORT 已恢复
 ⏰ 时间：\$time_now" >/dev/null
 }
 
