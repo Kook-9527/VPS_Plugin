@@ -178,44 +178,63 @@ if is_port_blocked; then
 fi
 
 block_port() {
-    # 修复点 3：防止重复添加 DROP 规则
-    is_port_blocked && return
-
     clean_rules
-    iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-    ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-    date '+%F %T' > "\$LAST_BLOCK_FILE"
-    send_tg_block
+    iptables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
+    ip6tables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
+    echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次异常，已关闭端口 \$LOCAL_PORT"
     port_blocked=true
-    block_start=\$(date +%s)
+    block_start_time=\$(date +%s)
 }
 
 unblock_port() {
     clean_rules
-    send_tg_unblock
+    echo "\$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 \$LOCAL_PORT"
     port_blocked=false
+    block_start_time=0
     HIGH_LATENCY_COUNT=0
 }
 
+# ----------------------------
+# 主循环
+# ----------------------------
 while true; do
     ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
     latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
 
+    # ========================
+    # 未阻断状态：统计连续异常
+    # ========================
     if ! \$port_blocked; then
         if [ -z "\$latency" ]; then
-            HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT+1))
+            HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
+            echo "\$(date '+%F %T') ❌ ping 失败（连续 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE）"
         else
             latency_int=\${latency%.*}
-            [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ] && \
-                HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT+1)) || \
+            echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
+            if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
+                HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
+                echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
+            else
                 HIGH_LATENCY_COUNT=0
+            fi
         fi
 
-        [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ] && block_port
+        if [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
+            block_port
+        fi
+
+    # ========================
+    # 已阻断状态：只判断时间
+    # ========================
     else
         now=\$(date +%s)
-        elapsed=\$((now - block_start))
-        [ "\$elapsed" -ge "\$BLOCK_DURATION" ] && unblock_port
+        elapsed=\$((now - block_start_time))
+
+        if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
+            unblock_port
+        else
+            echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
+        fi
     fi
 
     sleep 5
@@ -279,7 +298,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1.1"
+    echo " Ping Monitor 管理脚本 v1.2"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
