@@ -1,8 +1,11 @@
 #!/bin/bash
 # ============================================
 # Ping Monitor 管理脚本 v1.1
-# 特性：
-# - 原始阻断逻辑保持一致
+# 功能：
+# - 持续 ping IPv6 目标地址
+# - 延迟异常或中断时封禁端口（IPv4 + IPv6）
+# - 网络恢复并稳定后自动解封
+# - 使用 systemd 常驻运行
 # - 菜单显示状态、端口、最近阻断
 # - TG通知可选，自定义服务器备注
 # - TG 消息多行排版：名称 / 状态 / 时间
@@ -14,11 +17,11 @@ set -e
 # --------------------------
 # 原始参数
 # --------------------------
-DEFAULT_PORT=55555
-TARGET_IP="2606:4700:4700::1111"
-LATENCY_THRESHOLD=10
-BLOCK_DURATION=120
-REQUIRED_CONSECUTIVE=3
+DEFAULT_PORT=55555                   # 默认监听端口
+TARGET_IP="2606:4700:4700::1111"     # 对端IP地址（可填V4）
+LATENCY_THRESHOLD=10                 # 延迟阈值（ms）
+BLOCK_DURATION=120                   # 阻断时间（秒）
+REQUIRED_CONSECUTIVE=3               # 连续3次ping超过默认值就阻断
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
