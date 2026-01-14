@@ -1,8 +1,7 @@
 #!/bin/bash
-export PATH=/usr/sbin:/usr/bin:/sbin:/bin   # 【修改点0】确保 systemd 启动时能找到 iptables 和 ping
-
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 # ============================================
-# Ping Monitor 管理脚本 v1.3
+# Ping Monitor 管理脚本
 # 功能：
 # 1. 持续 ping IPv6 或 IPv4 目标地址
 # 2. 延迟异常或中断时封禁端口（IPv4 + IPv6）
@@ -325,7 +324,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.3"
+    echo " Ping Monitor 管理脚本 v1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
