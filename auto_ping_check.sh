@@ -210,7 +210,7 @@ while true; do
             echo "\$(date '+%F %T') ❌ ping 失败（连续 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE）"
         else
             latency_int=\${latency%.*}
-            echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
+            echo "\$(date '+%F %T') 延迟 \${latency}ms"
             if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
                 HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
                 echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
