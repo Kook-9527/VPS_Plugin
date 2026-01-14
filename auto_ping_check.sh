@@ -183,6 +183,9 @@ block_port() {
     ip6tables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
     echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
 
+    # 写入最近阻断文件
+    echo "$(date '+%F %T')" > "$LAST_BLOCK_FILE"
+
     # 发送 TG 消息
     send_tg_block
 
@@ -306,7 +309,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1"
+    echo " Ping Monitor 管理脚本 v1.1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
