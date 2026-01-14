@@ -12,8 +12,6 @@
 # - 清理彻底，systemd稳定
 # ============================================
 
-set -e
-
 # --------------------------
 # 原始参数
 # --------------------------
@@ -130,26 +128,12 @@ port_blocked=false
 block_start=0
 HIGH_LATENCY_COUNT=0
 
-send_tg_block() {
-    [ "\$TG_ENABLE" != "1" ] && return
-    local time_now
-    time_now=\$(date '+%F %T')
-    curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 名称：\$SERVER_NAME
-⚠️ 状态：\$LOCAL_PORT 端口已阻断
-⏰ 时间：\$time_now" >/dev/null
-}
-
-send_tg_unblock() {
-    [ "\$TG_ENABLE" != "1" ] && return
-    local time_now
-    time_now=\$(date '+%F %T')
-    curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 名称：\$SERVER_NAME
-✅ 状态：\$LOCAL_PORT 端口已恢复
-⏰ 时间：\$time_now" >/dev/null
+# ============================================
+# 修复点 1：判断当前端口是否已被防火墙阻断
+# ============================================
+is_port_blocked() {
+    iptables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null || \
+    ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null
 }
 
 clean_rules() {
@@ -162,7 +146,40 @@ clean_rules() {
     done
 }
 
+send_tg_block() {
+    [ "\$TG_ENABLE" != "1" ] && return
+    local time_now
+    time_now=\$(date '+%F %T')
+    curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
+        -d chat_id="\${TG_CHAT_ID}" \
+        -d text="💻 主机名：\$SERVER_NAME
+⚠️ 端口：\$LOCAL_PORT 已阻断
+⏰ 时间：\$time_now" >/dev/null
+}
+
+send_tg_unblock() {
+    [ "\$TG_ENABLE" != "1" ] && return
+    local time_now
+    time_now=\$(date '+%F %T')
+    curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
+        -d chat_id="\${TG_CHAT_ID}" \
+        -d text="💻 主机名：\$SERVER_NAME
+✅ 端口：\$LOCAL_PORT 已恢复
+⏰ 时间：\$time_now" >/dev/null
+}
+
+# ============================================
+# 修复点 2：脚本启动时同步真实防火墙状态
+# ============================================
+if is_port_blocked; then
+    port_blocked=true
+    block_start=\$(date +%s)
+fi
+
 block_port() {
+    # 修复点 3：防止重复添加 DROP 规则
+    is_port_blocked && return
+
     clean_rules
     iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
     ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
@@ -186,18 +203,18 @@ while true; do
     if ! \$port_blocked; then
         if [ -z "\$latency" ]; then
             HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT+1))
-            echo "\$(date '+%F %T') ❌ ping 失败（连续 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE）"
         else
             latency_int=\${latency%.*}
-            echo "\$(date '+%F %T') ℹ️ 延迟 \${latency}ms"
-            [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ] && HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT+1)) || HIGH_LATENCY_COUNT=0
+            [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ] && \
+                HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT+1)) || \
+                HIGH_LATENCY_COUNT=0
         fi
 
         [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ] && block_port
     else
         now=\$(date +%s)
         elapsed=\$((now - block_start))
-        [ "\$elapsed" -ge "\$BLOCK_DURATION" ] && unblock_port || echo "\$(date '+%F %T') ⏳ 端口阻断中，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
+        [ "\$elapsed" -ge "\$BLOCK_DURATION" ] && unblock_port
     fi
 
     sleep 5
@@ -240,7 +257,7 @@ remove_monitor() {
 
     for t in iptables ip6tables; do
         while true; do
-            n=$($t -L INPUT --line-numbers -n | grep "tcp dpt:" | awk '{print $1}' | head -n1)
+            n=$($t -L INPUT --line-numbers -n | grep "tcp dpt:$DEFAULT_PORT" | awk '{print $1}' | head -n1)
             [ -z "$n" ] && break
             $t -D INPUT "$n"
         done
