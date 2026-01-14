@@ -99,9 +99,9 @@ install_monitor() {
     read -rp "是否启用 Telegram 通知？[Y/n]: " c
     if [[ -z "$c" || "$c" =~ ^[Yy]$ ]]; then
         TG_ENABLE=1
-        read -rp "TG机器人 Token: " TG_BOT_TOKEN
-        read -rp "TG账号 ID: " TG_CHAT_ID
-        read -rp "请输入本服务器备注（如 小鸡1）: " SERVER_NAME
+        read -rp "TG机器人Token: " TG_BOT_TOKEN
+        read -rp "TG账号ID: " TG_CHAT_ID
+        read -rp "请输入本服务器备注（如：小鸡1）: " SERVER_NAME
         SERVER_NAME="${SERVER_NAME:-未命名服务器}"
     else
         TG_ENABLE=0
