@@ -247,7 +247,7 @@ done
 
     chmod +x "$SCRIPT_PATH"
 
-cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
+cat <<EOF >/etc/systemd/system/$SERVICE_NAME
 [Unit]
 Description=Ping Monitor - Auto Close Port $PORT (IPv4 + IPv6)
 After=network-online.target
@@ -302,7 +302,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.2"
+    echo " Ping Monitor 管理脚本 v1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
