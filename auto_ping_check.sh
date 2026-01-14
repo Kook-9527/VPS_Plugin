@@ -99,7 +99,7 @@ install_monitor() {
         TG_ENABLE=1
         read -rp "TG Bot Token: " TG_BOT_TOKEN
         read -rp "TG Chat ID: " TG_CHAT_ID
-        read -rp "请输入本服务器备注（如 server1）: " SERVER_NAME
+        read -rp "请输入本服务器备注（如 小鸡1）: " SERVER_NAME
         SERVER_NAME="${SERVER_NAME:-未命名服务器}"
     else
         TG_ENABLE=0
