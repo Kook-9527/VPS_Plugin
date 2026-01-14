@@ -24,8 +24,7 @@ REQUIRED_CONSECUTIVE=3               # 连续3次ping值超过默认就阻断
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
 LAST_BLOCK_FILE="/root/ping_monitor_last_block.txt"
-IPTABLES="/sbin/iptables"
-IP6TABLES="/sbin/ip6tables"
+
 
 # ============================================
 # 状态读取
@@ -134,20 +133,17 @@ HIGH_LATENCY_COUNT=0
 # 修复点 1：判断当前端口是否已被防火墙阻断
 # ============================================
 is_port_blocked() {
-    $IPTABLES -C INPUT -p tcp --dport $LOCAL_PORT -j DROP &>/dev/null || \
-    $IP6TABLES -C INPUT -p tcp --dport $LOCAL_PORT -j DROP &>/dev/null
+    iptables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null || \
+    ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null
 }
 
 clean_rules() {
-    iptables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || true
-    ip6tables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || true
-
-    # 防止历史叠加，最多清 10 次
-    for i in {1..10}; do
-        iptables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || break
-    done
-    for i in {1..10}; do
-        ip6tables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || break
+    for proto in iptables ip6tables; do
+        while true; do
+            num=\$($proto -L INPUT --line-numbers -n | grep "tcp dpt:\$LOCAL_PORT" | awk '{print \$1}' | head -n1)
+            [ -z "\$num" ] && break
+            \$proto -D INPUT \$num
+        done
     done
 }
 
@@ -228,15 +224,18 @@ EOF
 
     chmod +x "$SCRIPT_PATH"
 
-cat > "/etc/systemd/system/$SERVICE_NAME" <<EOF
+cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
 Description=Ping Monitor - Auto Close Port $PORT (IPv4 + IPv6)
 After=network-online.target
 
 [Service]
+Type=simple
 ExecStart=$SCRIPT_PATH
 Restart=always
 RestartSec=5
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
@@ -244,7 +243,11 @@ EOF
 
     systemctl daemon-reload
     systemctl enable --now "$SERVICE_NAME"
-    echo "✅ 安装完成，服务已启动"
+
+    echo "✅ 安装完成：服务已启动"
+    echo "✅ 状态命令行：systemctl status $SERVICE_NAME"
+    echo "✅ 日志命令行：journalctl -u $SERVICE_NAME -f"
+
 }
 
 # ============================================
@@ -276,7 +279,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1"
+    echo " Ping Monitor 管理脚本 v1.1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
