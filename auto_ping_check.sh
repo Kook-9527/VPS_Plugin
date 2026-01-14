@@ -55,9 +55,9 @@ tg_settings() {
     if [ "$TG_ENABLE" != "1" ]; then
         read -rp "是否启用 Telegram 通知？[Y/n]: " c
         if [[ -z "$c" || "$c" =~ ^[Yy]$ ]]; then
-            read -rp "请输入 TG Bot Token: " token
-            read -rp "请输入 TG Chat ID: " chat
-            read -rp "请输入本服务器备注（如 小鸡1）: " SERVER_NAME
+            read -rp "请输入TG机器人Token: " token
+            read -rp "请输入TG账号ID: " chat
+            read -rp "请输入本服务器备注（如：小鸡1）: " SERVER_NAME
             SERVER_NAME="${SERVER_NAME:-未命名服务器}"
             sed -i "s/^TG_ENABLE=.*/TG_ENABLE=1/" "$SCRIPT_PATH"
             sed -i "s|^TG_BOT_TOKEN=.*|TG_BOT_TOKEN=\"$token\"|" "$SCRIPT_PATH"
@@ -71,8 +71,8 @@ tg_settings() {
         read -rp "请选择: " sub
         case "$sub" in
             1)
-                read -rp "新的 TG机器人 Token: " token
-                read -rp "新的 TG账号 ID: " chat
+                read -rp "新的TG机器人Token: " token
+                read -rp "新的TG账号ID: " chat
                 read -rp "新的服务器备注: " SERVER_NAME
                 SERVER_NAME="${SERVER_NAME:-未命名服务器}"
                 sed -i "s|^TG_BOT_TOKEN=.*|TG_BOT_TOKEN=\"$token\"|" "$SCRIPT_PATH"
@@ -309,7 +309,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1.1"
+    echo " Ping Monitor 管理脚本 v1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
