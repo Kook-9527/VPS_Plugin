@@ -133,8 +133,8 @@ send_tg_block() {
     time_now=\$(date '+%F %T')
     curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
         -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 主机名：\$SERVER_NAME
-⚠️ 端口状态：\$LOCAL_PORT 已阻断
+        -d text="💻 名称：\$SERVER_NAME
+⚠️ 状态：\$LOCAL_PORT 端口已阻断
 ⏰ 时间：\$time_now" >/dev/null
 }
 
@@ -144,8 +144,8 @@ send_tg_unblock() {
     time_now=\$(date '+%F %T')
     curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
         -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 主机名：\$SERVER_NAME
-✅ 端口状态：\$LOCAL_PORT 已恢复
+        -d text="💻 名称：\$SERVER_NAME
+✅ 状态：\$LOCAL_PORT 端口已恢复
 ⏰ 时间：\$time_now" >/dev/null
 }
 
