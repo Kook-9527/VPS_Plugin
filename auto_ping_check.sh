@@ -181,13 +181,14 @@ block_port() {
     clean_rules
     iptables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
     ip6tables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
-    echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
 
     # 写入最近阻断文件
     echo "$(date '+%F %T')" > "$LAST_BLOCK_FILE"
 
-    # 发送 TG 消息
+    # 发送 TG 阻断消息
     send_tg_block
+
+    echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
 
     port_blocked=true
     block_start_time=$(date +%s)
