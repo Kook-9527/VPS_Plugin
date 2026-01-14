@@ -1,4 +1,5 @@
 #!/bin/bash
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin   # 【修改点0】确保 systemd 启动时能找到 iptables 和 ping
 # ============================================
 # Ping Monitor 管理脚本
 # 功能：
@@ -126,7 +127,7 @@ SERVER_NAME="$SERVER_NAME"
 LAST_BLOCK_FILE="$LAST_BLOCK_FILE"
 
 port_blocked=false
-block_start=0
+block_start_time=0
 HIGH_LATENCY_COUNT=0
 
 # ============================================
@@ -182,11 +183,9 @@ block_port() {
     iptables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
     ip6tables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
 
-    # 写入最近阻断文件
     echo "$(date '+%F %T')" > "$LAST_BLOCK_FILE"
 
-    # 发送 TG 阻断消息
-    send_tg_block
+    send_tg_block   # 【TG消息放这里】
 
     echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
 
@@ -198,54 +197,16 @@ unblock_port() {
     clean_rules
     echo "$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 $LOCAL_PORT"
 
-    # 发送 TG 消息
-    send_tg_unblock
+    send_tg_unblock   # 【TG消息放这里】
 
     port_blocked=false
     block_start_time=0
     HIGH_LATENCY_COUNT=0
 }
+}
 
-# ----------------------------
-# 阻断/恢复消息推送
-# ----------------------------
-while true; do
-    ping_output=$(ping -6 -c 1 -W 1 $TARGET_IP 2>/dev/null)
-    latency=$(echo "$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
-    latency_int=0
-    [ -n "$latency" ] && latency_int=${latency%.*}
 
-    if [ "$port_blocked" = false ]; then
-        # 未阻断状态：统计连续异常
-        if [ -z "$latency" ] || [ "$latency_int" -ge "$LATENCY_THRESHOLD" ]; then
-            HIGH_LATENCY_COUNT=$((HIGH_LATENCY_COUNT+1))
-        else
-            HIGH_LATENCY_COUNT=0
-        fi
-
-        if [ "$HIGH_LATENCY_COUNT" -ge "$REQUIRED_CONSECUTIVE" ]; then
-            block_port        # 阻断端口
-            send_tg_block     # 立即发送 TG 消息
-            block_start=$(date +%s)
-        fi
-    else
-        # 已阻断状态：等待恢复或时间到
-        if [ -n "$latency" ] && [ "$latency_int" -lt "$LATENCY_THRESHOLD" ]; then
-            unblock_port
-            send_tg_unblock
-        else
-            now=$(date +%s)
-            elapsed=$((now - block_start))
-            if [ "$elapsed" -ge "$BLOCK_DURATION" ]; then
-                unblock_port
-            fi
-        fi
-    fi
-
-    sleep 5
-done
-
-    chmod +x "$SCRIPT_PATH"
+chmod +x "$SCRIPT_PATH"   # 【修改点4】
 
 cat <<EOF >/etc/systemd/system/$SERVICE_NAME
 [Unit]
@@ -264,8 +225,45 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
 
-    systemctl daemon-reload
-    systemctl enable --now "$SERVICE_NAME"
+systemctl daemon-reload
+systemctl enable --now "$SERVICE_NAME"
+
+
+# ----------------------------
+# 阻断/恢复消息推送
+# ----------------------------
+while true; do
+    ping_output=$(ping -6 -c 1 -W 1 $TARGET_IP 2>/dev/null)
+    latency=$(echo "$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
+    latency_int=0
+    [ -n "$latency" ] && latency_int=${latency%.*}
+
+    if [ "$port_blocked" = false ]; then
+        if [ -z "$latency" ] || [ "$latency_int" -ge "$LATENCY_THRESHOLD" ]; then
+            HIGH_LATENCY_COUNT=$((HIGH_LATENCY_COUNT+1))
+        else
+            HIGH_LATENCY_COUNT=0
+        fi
+
+        if [ "$HIGH_LATENCY_COUNT" -ge "$REQUIRED_CONSECUTIVE" ]; then
+            block_port   # 内部发送 TG 消息
+        fi
+    else
+        if [ -n "$latency" ] && [ "$latency_int" -lt "$LATENCY_THRESHOLD" ]; then
+            unblock_port   # 内部发送 TG 消息
+        else
+            now=$(date +%s)
+            elapsed=$((now - block_start_time))
+            if [ "$elapsed" -ge "$BLOCK_DURATION" ]; then
+                unblock_port
+            fi
+        fi
+    fi
+
+    sleep 5
+done
+
+
 
     echo "✅ 安装完成：服务已启动"
     echo "✅ 状态命令行：systemctl status $SERVICE_NAME"
@@ -302,7 +300,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.2"
+    echo " Ping Monitor 管理脚本 v1.1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
