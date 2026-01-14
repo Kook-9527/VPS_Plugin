@@ -24,8 +24,8 @@ REQUIRED_CONSECUTIVE=3               # 连续3次ping值超过默认就阻断
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
 LAST_BLOCK_FILE="/root/ping_monitor_last_block.txt"
-IPTABLES=/sbin/iptables
-IP6TABLES=/sbin/ip6tables
+IPTABLES="/sbin/iptables"
+IP6TABLES="/sbin/ip6tables"
 
 # ============================================
 # 状态读取
@@ -276,7 +276,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1.2"
+    echo " Ping Monitor 管理脚本 v1.1"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
