@@ -137,12 +137,15 @@ is_port_blocked() {
 }
 
 clean_rules() {
-    for t in iptables ip6tables; do
-        while true; do
-            n=\$($t -L INPUT --line-numbers -n | grep "tcp dpt:\$LOCAL_PORT" | awk '{print \$1}' | head -n1)
-            [ -z "\$n" ] && break
-            $t -D INPUT "\$n"
-        done
+    iptables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || true
+    ip6tables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || true
+
+    # 防止历史叠加，最多清 10 次
+    for i in {1..10}; do
+        iptables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || break
+    done
+    for i in {1..10}; do
+        ip6tables -D INPUT -p tcp --dport $LOCAL_PORT -j DROP 2>/dev/null || break
     done
 }
 
