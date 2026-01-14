@@ -13,12 +13,11 @@
 # ============================================
 
 # --------------------------
-# 【修改点0】设置 PATH，保证 systemd 启动时能找到 iptables 和 ping
+# 【修改点0】明确 PATH
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
 
 # --------------------------
 # 原始参数
-# --------------------------
 DEFAULT_PORT=55555                   # 默认监听端口
 TARGET_IP="2606:4700:4700::1111"     # 对端IP地址（可填V4）
 LATENCY_THRESHOLD=10                 # 延迟阈值（ms）
@@ -49,18 +48,17 @@ get_last_block_time() {
 }
 
 # ============================================
-# TG 设置函数
+# TG 设置
 # ============================================
 tg_settings() {
     [ ! -f "$SCRIPT_PATH" ] && echo "❌ 服务未安装" && return
-
     TG_ENABLE=$(grep "^TG_ENABLE=" "$SCRIPT_PATH" | cut -d= -f2)
     if [ "$TG_ENABLE" != "1" ]; then
         read -rp "是否启用 Telegram 通知？[Y/n]: " c
         if [[ -z "$c" || "$c" =~ ^[Yy]$ ]]; then
-            read -rp "请输入TG机器人Token: " token
-            read -rp "请输入TG账号ID: " chat
-            read -rp "请输入本服务器备注（如：小鸡1）: " SERVER_NAME
+            read -rp "TG机器人Token: " token
+            read -rp "TG账号ID: " chat
+            read -rp "服务器备注: " SERVER_NAME
             SERVER_NAME="${SERVER_NAME:-未命名服务器}"
             sed -i "s/^TG_ENABLE=.*/TG_ENABLE=1/" "$SCRIPT_PATH"
             sed -i "s|^TG_BOT_TOKEN=.*|TG_BOT_TOKEN=\"$token\"|" "$SCRIPT_PATH"
@@ -87,13 +85,12 @@ tg_settings() {
                 ;;
         esac
     fi
-
     systemctl restart "$SERVICE_NAME"
     echo "✅ TG 设置已更新"
 }
 
 # ============================================
-# 安装监控函数
+# 安装监控
 # ============================================
 install_monitor() {
     read -rp "请输入监控端口 [默认 $DEFAULT_PORT]: " p
@@ -104,7 +101,7 @@ install_monitor() {
         TG_ENABLE=1
         read -rp "TG机器人Token: " TG_BOT_TOKEN
         read -rp "TG账号ID: " TG_CHAT_ID
-        read -rp "请输入本服务器备注（如：小鸡1）: " SERVER_NAME
+        read -rp "服务器备注: " SERVER_NAME
         SERVER_NAME="${SERVER_NAME:-未命名服务器}"
     else
         TG_ENABLE=0
@@ -113,112 +110,105 @@ install_monitor() {
         SERVER_NAME="未命名服务器"
     fi
 
-    # ============================================
-    # 写入监控脚本
-    # ============================================
-cat > "$SCRIPT_PATH" <<EOF
+cat > "$SCRIPT_PATH" <<'EOF'
 #!/bin/bash
-TARGET_IP="$TARGET_IP"
-LOCAL_PORT=$PORT
-LATENCY_THRESHOLD=$LATENCY_THRESHOLD
-BLOCK_DURATION=$BLOCK_DURATION
-REQUIRED_CONSECUTIVE=$REQUIRED_CONSECUTIVE
+# ============================================
+# Ping Monitor 循环脚本 v1.4
+# 修复 systemd PATH & iptables 问题
+# ============================================
 
-TG_ENABLE=$TG_ENABLE
-TG_BOT_TOKEN="$TG_BOT_TOKEN"
-TG_CHAT_ID="$TG_CHAT_ID"
-SERVER_NAME="$SERVER_NAME"
+TARGET_IP="2606:4700:4700::1111"
+LOCAL_PORT=55555
+LATENCY_THRESHOLD=10
+BLOCK_DURATION=120
+REQUIRED_CONSECUTIVE=3
 
-LAST_BLOCK_FILE="$LAST_BLOCK_FILE"
+TG_ENABLE=1
+TG_BOT_TOKEN=""
+TG_CHAT_ID=""
+SERVER_NAME="未命名服务器"
+LAST_BLOCK_FILE="/root/ping_monitor_last_block.txt"
 
-# --------------------------
-# 状态变量
-# --------------------------
 port_blocked=false
 block_start_time=0
 HIGH_LATENCY_COUNT=0
 recovery_count=0
 
-# ============================================
-# 判断端口是否已被阻断
-# ============================================
+# 使用绝对路径确保 systemd 启动能找到
+IPTABLES=/usr/sbin/iptables
+IP6TABLES=/usr/sbin/ip6tables
+PING=/bin/ping
+CURL=/usr/bin/curl
+
+# --------------------------------------------
+# 判断端口是否阻断
 is_port_blocked() {
-    iptables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null || \
-    ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null
+    $IPTABLES -C INPUT -p tcp --dport $LOCAL_PORT -j DROP &>/dev/null || \
+    $IP6TABLES -C INPUT -p tcp --dport $LOCAL_PORT -j DROP &>/dev/null
 }
 
-# ============================================
+# --------------------------------------------
 # 清理已有防火墙规则
-# ============================================
 clean_rules() {
-    for proto in iptables ip6tables; do
+    for CMD in $IPTABLES $IP6TABLES; do
         while true; do
-            num=\$($proto -L INPUT --line-numbers -n | grep "tcp dpt:\$LOCAL_PORT" | awk '{print \$1}' | head -n1)
-            [ -z "\$num" ] && break
-            \$proto -D INPUT \$num
+            NUM=$($CMD -L INPUT --line-numbers -n | grep "tcp dpt:$LOCAL_PORT" | awk '{print $1}' | head -n1)
+            [ -z "$NUM" ] && break
+            $CMD -D INPUT $NUM
         done
     done
 }
 
-# ============================================
+# --------------------------------------------
 # 发送 TG 阻断消息
-# ============================================
 send_tg_block() {
-    [ "\$TG_ENABLE" != "1" ] && return
-    local time_now
-    time_now=\$(date '+%F %T')
-    curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 名称：\$SERVER_NAME
-⚠️ 状态：\$LOCAL_PORT 端口已阻断
-⏰ 时间：\$time_now" >/dev/null
+    [ "$TG_ENABLE" != "1" ] && return
+    TIME_NOW=$(date '+%F %T')
+    $CURL -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TG_CHAT_ID}" \
+        -d text="💻 名称：$SERVER_NAME
+⚠️ 状态：$LOCAL_PORT 端口已阻断
+⏰ 时间：$TIME_NOW" >/dev/null
 }
 
-# ============================================
+# --------------------------------------------
 # 发送 TG 恢复消息
-# ============================================
 send_tg_unblock() {
-    [ "\$TG_ENABLE" != "1" ] && return
-    local time_now
-    time_now=\$(date '+%F %T')
-    curl -s -X POST "https://api.telegram.org/bot\${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="\${TG_CHAT_ID}" \
-        -d text="💻 名称：\$SERVER_NAME
-✅ 状态：\$LOCAL_PORT 端口已恢复
-⏰ 时间：\$time_now" >/dev/null
+    [ "$TG_ENABLE" != "1" ] && return
+    TIME_NOW=$(date '+%F %T')
+    $CURL -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${TG_CHAT_ID}" \
+        -d text="💻 名称：$SERVER_NAME
+✅ 状态：$LOCAL_PORT 端口已恢复
+⏰ 时间：$TIME_NOW" >/dev/null
 }
 
-# ============================================
+# --------------------------------------------
 # 启动时同步防火墙状态
-# ============================================
 if is_port_blocked; then
     port_blocked=true
-    block_start_time=\$(date +%s)
+    block_start_time=$(date +%s)
 fi
 
-# ============================================
-# 阻断端口函数
-# ============================================
+# --------------------------------------------
+# 阻断端口
 block_port() {
     clean_rules
-    iptables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-    ip6tables -A INPUT -p tcp --dport \$LOCAL_PORT -j DROP
-
-    echo "\$(date '+%F %T')" > "\$LAST_BLOCK_FILE"
+    $IPTABLES -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
+    $IP6TABLES -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
+    echo "$(date '+%F %T')" > "$LAST_BLOCK_FILE"
     send_tg_block
-
-    echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次异常，已关闭端口 \$LOCAL_PORT"
+    echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
     port_blocked=true
-    block_start_time=\$(date +%s)
+    block_start_time=$(date +%s)
     recovery_count=0
 }
 
-# ============================================
-# 解除阻断端口函数
-# ============================================
+# --------------------------------------------
+# 解除阻断
 unblock_port() {
     clean_rules
-    echo "\$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 \$LOCAL_PORT"
+    echo "$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 $LOCAL_PORT"
     send_tg_unblock
     port_blocked=false
     block_start_time=0
@@ -226,44 +216,33 @@ unblock_port() {
     recovery_count=0
 }
 
-# ============================================
-# 主循环：ping监控 + 阻断逻辑
-# ============================================
+# --------------------------------------------
+# 主循环：ping + 阻断逻辑
 while true; do
-    ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
-    latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
-    latency_int=0
-    [ -n "\$latency" ] && latency_int=\${latency%.*}
+    PING_OUTPUT=$($PING -6 -c 1 -W 1 $TARGET_IP 2>/dev/null)
+    LATENCY=$(echo "$PING_OUTPUT" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
+    LATENCY_INT=0
+    [ -n "$LATENCY" ] && LATENCY_INT=${LATENCY%.*}
 
-    if [ "\$port_blocked" = false ]; then
-        # --------------------------
-        # 未阻断：统计连续异常次数
-        # --------------------------
-        if [ -z "\$latency" ] || [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
-            HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT+1))
+    if [ "$port_blocked" = false ]; then
+        if [ -z "$LATENCY" ] || [ "$LATENCY_INT" -ge "$LATENCY_THRESHOLD" ]; then
+            HIGH_LATENCY_COUNT=$((HIGH_LATENCY_COUNT+1))
         else
             HIGH_LATENCY_COUNT=0
         fi
 
-        # 达到连续异常次数阻断
-        if [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
+        if [ "$HIGH_LATENCY_COUNT" -ge "$REQUIRED_CONSECUTIVE" ]; then
             block_port
         fi
     else
-        # --------------------------
-        # 已阻断：等待 BLOCK_DURATION 或恢复
-        # --------------------------
-        now=\$(date +%s)
-        elapsed=\$((now - block_start_time))
-
-        # 阻断时间到，解除
-        if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
+        NOW=$(date +%s)
+        ELAPSED=$((NOW - block_start_time))
+        if [ "$ELAPSED" -ge "$BLOCK_DURATION" ]; then
             unblock_port
         else
-            # 连续 3 次 ping 正常可提前解除
-            if [ -n "\$latency" ] && [ "\$latency_int" -lt "\$LATENCY_THRESHOLD" ]; then
-                recovery_count=\$((recovery_count+1))
-                if [ "\$recovery_count" -ge 3 ]; then
+            if [ -n "$LATENCY" ] && [ "$LATENCY_INT" -lt "$LATENCY_THRESHOLD" ]; then
+                recovery_count=$((recovery_count+1))
+                if [ "$recovery_count" -ge 3 ]; then
                     unblock_port
                 fi
             else
@@ -271,17 +250,14 @@ while true; do
             fi
         fi
     fi
-
     sleep 5
 done
 EOF
 
-    # 设置权限
     chmod +x "$SCRIPT_PATH"
 
-    # ============================================
-    # 写入 systemd 服务
-    # ============================================
+    # --------------------------------------------
+    # systemd 服务文件
 cat <<EOF >/etc/systemd/system/$SERVICE_NAME
 [Unit]
 Description=Ping Monitor - Auto Close Port $PORT (IPv4 + IPv6)
@@ -308,7 +284,7 @@ EOF
 }
 
 # ============================================
-# 清理并复原
+# 清理函数
 # ============================================
 remove_monitor() {
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
@@ -320,11 +296,11 @@ remove_monitor() {
     rm -f "$SCRIPT_PATH"
     rm -f "$LAST_BLOCK_FILE"
 
-    for t in iptables ip6tables; do
+    for T in /usr/sbin/iptables /usr/sbin/ip6tables; do
         while true; do
-            n=$($t -L INPUT --line-numbers -n | grep "tcp dpt:$DEFAULT_PORT" | awk '{print $1}' | head -n1)
-            [ -z "$n" ] && break
-            $t -D INPUT "$n"
+            N=$($T -L INPUT --line-numbers -n | grep "tcp dpt:$DEFAULT_PORT" | awk '{print $1}' | head -n1)
+            [ -z "$N" ] && break
+            $T -D INPUT $N
         done
     done
 
