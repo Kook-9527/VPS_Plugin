@@ -179,16 +179,24 @@ fi
 
 block_port() {
     clean_rules
-    iptables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
-    ip6tables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
-    echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次异常，已关闭端口 \$LOCAL_PORT"
+    iptables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
+    ip6tables -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
+    echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
+
+    # 发送 TG 消息
+    send_tg_block
+
     port_blocked=true
-    block_start_time=\$(date +%s)
+    block_start_time=$(date +%s)
 }
 
 unblock_port() {
     clean_rules
-    echo "\$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 \$LOCAL_PORT"
+    echo "$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 $LOCAL_PORT"
+
+    # 发送 TG 消息
+    send_tg_unblock
+
     port_blocked=false
     block_start_time=0
     HIGH_LATENCY_COUNT=0
