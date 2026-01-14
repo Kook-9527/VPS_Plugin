@@ -207,51 +207,43 @@ unblock_port() {
 }
 
 # ----------------------------
-# 主循环
+# 阻断/恢复消息推送
 # ----------------------------
 while true; do
-    ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
-    latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
+    ping_output=$(ping -6 -c 1 -W 1 $TARGET_IP 2>/dev/null)
+    latency=$(echo "$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
 
-    # ========================
-    # 未阻断状态：统计连续异常
-    # ========================
-    if ! \$port_blocked; then
-        if [ -z "\$latency" ]; then
-            HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
-            echo "\$(date '+%F %T') ❌ ping 失败（连续 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE）"
+    if ! $port_blocked; then
+        if [ -z "$latency" ]; then
+            HIGH_LATENCY_COUNT=$((HIGH_LATENCY_COUNT+1))
         else
-            latency_int=\${latency%.*}
-            echo "\$(date '+%F %T') 延迟 \${latency}ms"
-            if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
-                HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
-                echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
-            else
-                HIGH_LATENCY_COUNT=0
-            fi
+            latency_int=${latency%.*}
+            [ "$latency_int" -ge "$LATENCY_THRESHOLD" ] && HIGH_LATENCY_COUNT=$((HIGH_LATENCY_COUNT+1)) || HIGH_LATENCY_COUNT=0
         fi
 
-        if [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
-            block_port
+        if [ "$HIGH_LATENCY_COUNT" -ge "$REQUIRED_CONSECUTIVE" ]; then
+            block_port        # 阻断端口
+            send_tg_block     # 立即发送 TG 消息
+            block_start=$(date +%s)
         fi
-
-    # ========================
-    # 已阻断状态：只判断时间
-    # ========================
     else
-        now=\$(date +%s)
-        elapsed=\$((now - block_start_time))
-
-        if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
+        # ping 恢复时立即解除阻断并发送 TG 消息
+        if [ -n "$latency" ] && [ "$latency_int" -lt "$LATENCY_THRESHOLD" ]; then
             unblock_port
+            send_tg_unblock
         else
-            echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
+            # 依然可以保留 BLOCK_DURATION，控制端口实际解除
+            now=$(date +%s)
+            elapsed=$((now - block_start))
+            if [ "$elapsed" -ge "$BLOCK_DURATION" ]; then
+                clean_rules
+                block_start=0
+            fi
         fi
     fi
 
     sleep 5
 done
-EOF
 
     chmod +x "$SCRIPT_PATH"
 
@@ -310,7 +302,7 @@ remove_monitor() {
 # ============================================
 show_menu() {
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1"
+    echo " Ping Monitor 管理脚本 v1.2"
     echo "============================="
     echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
     echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
