@@ -7,32 +7,41 @@
 #   - 网络恢复并稳定后自动解封
 #   - 使用 systemd 常驻运行
 #   - 添加 TG 通知设置
+#   - 支持动态修改运行参数
 # ============================================
 
 set -e
 
 # =========================
-# 默认参数
+# 默认参数定义
 # =========================
-DEFAULT_PORT=55555                 # 默认监听端口
+DEFAULT_PORT_VAL=55555             # 默认监听端口
 TARGET_IP="2606:4700:4700::1111"   # 对端IP地址（可填V4）
 LATENCY_THRESHOLD=20               # 延迟阈值（ms）
 BLOCK_DURATION=120                 # 阻断时间（秒）
+REQUIRED_CONSECUTIVE=3             # 连续异常计数
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
 CONFIG_FILE="/etc/ping_monitor_config.sh"
 
+# =========================
 # 加载保存的配置
+# =========================
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
 fi
 
+# 确保变量有值（如果没有从配置文件加载到，则使用默认值）
 TG_ENABLE=${TG_ENABLE:-"已关闭"}
 TG_TOKEN=${TG_TOKEN:-""}
 TG_CHATID=${TG_CHATID:-""}
 SERVER_NAME=${SERVER_NAME:-"未命名服务器"}
-PORT=${PORT:-$DEFAULT_PORT}
+PORT=${PORT:-$DEFAULT_PORT_VAL}
+TARGET_IP=${TARGET_IP:-"2606:4700:4700::1111"}
+LATENCY_THRESHOLD=${LATENCY_THRESHOLD:-20}
+BLOCK_DURATION=${BLOCK_DURATION:-120}
+REQUIRED_CONSECUTIVE=${REQUIRED_CONSECUTIVE:-3}
 
 install_dependencies() {
     if [ -f /etc/os-release ]; then . /etc/os-release; DISTRO_ID="$ID"; fi
@@ -47,54 +56,26 @@ install_dependencies() {
 }
 
 # ============================================
-# TG 设置函数
+# 保存配置函数 (统一管理)
 # ============================================
-setup_tg() {
-    echo "--- TG 通知配置 ---"
-    read -rp "是否开启 TG 通知? [Y/n]: " choice
-    choice=${choice:-y}
-    if [[ "$choice" == [yY] ]]; then
-        read -rp "请输入此服务器备注名称: " SERVER_NAME
-        read -rp "请输入TG机器人Token: " TG_TOKEN  
-        read -rp "请输入TG账号ID: " TG_CHATID
-        TG_ENABLE="已开启"
-    else
-        TG_ENABLE="已关闭"
-    fi
-    
-    # 保存配置到文件
+save_config() {
     cat << EOF > "$CONFIG_FILE"
 TG_ENABLE="$TG_ENABLE"
 TG_TOKEN="$TG_TOKEN"
 TG_CHATID="$TG_CHATID"
 SERVER_NAME="$SERVER_NAME"
 PORT="$PORT"
+TARGET_IP="$TARGET_IP"
+LATENCY_THRESHOLD="$LATENCY_THRESHOLD"
+BLOCK_DURATION="$BLOCK_DURATION"
+REQUIRED_CONSECUTIVE="$REQUIRED_CONSECUTIVE"
 EOF
-
-    # 如果服务在运行，立即重启
-    if systemctl is-active --quiet "$SERVICE_NAME"; then
-        systemctl restart "$SERVICE_NAME"
-    fi
-    echo "✅ TG 配置已更新"
 }
 
 # ============================================
-# 安装函数 (直接调用 setup_tg)
+# 生成核心监控脚本函数
 # ============================================
-install_monitor() {
-    echo "📥 开始安装程序..."
-    install_dependencies
-    
-    # 1. 询问端口
-    read -rp "请输入监控端口 [默认 $PORT]: " USER_PORT
-    PORT="${USER_PORT:-$PORT}"
-
-    # 2. 直接进入 TG 配置询问
-    echo "-----------------------------"
-    setup_tg
-    echo "-----------------------------"
-
-    # 3. 写入后台脚本
+create_monitor_script() {
     cat << EOF > "$SCRIPT_PATH"
 #!/bin/bash
 export LANG=C
@@ -105,10 +86,12 @@ if [ -f "\$CONFIG_FILE" ]; then
     source "\$CONFIG_FILE"
 fi
 
+# 使用配置中的变量
 TARGET_IP="$TARGET_IP"
 LOCAL_PORT=\$PORT
 LATENCY_THRESHOLD=$LATENCY_THRESHOLD
 BLOCK_DURATION=$BLOCK_DURATION
+REQUIRED_CONSECUTIVE=$REQUIRED_CONSECUTIVE
 
 send_tg() {
     [ "\$TG_ENABLE" != "已开启" ] && return
@@ -124,7 +107,6 @@ send_tg() {
 port_blocked=false
 block_start_time=0
 HIGH_LATENCY_COUNT=0
-REQUIRED_CONSECUTIVE=3   # 连续异常计数
 
 clean_rules() {
     for proto in iptables ip6tables; do
@@ -172,7 +154,7 @@ while true; do
             echo "\$(date '+%F %T') 延迟 \${latency}ms"
             if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
                 HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
-                echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/3"
+                echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
             else
                 HIGH_LATENCY_COUNT=0
             fi
@@ -193,8 +175,98 @@ while true; do
     sleep 5
 done
 EOF
-
     chmod +x "$SCRIPT_PATH"
+}
+
+# ============================================
+# TG 设置函数
+# ============================================
+setup_tg() {
+    echo "--- TG 通知配置 ---"
+    read -rp "是否开启 TG 通知? [Y/n]: " choice
+    choice=${choice:-y}
+    if [[ "$choice" == [yY] ]]; then
+        read -rp "请输入此服务器备注名称: " SERVER_NAME
+        read -rp "请输入TG机器人Token: " TG_TOKEN
+        read -rp "请输入TG账号ID: " TG_CHATID
+        TG_ENABLE="已开启"
+    else
+        TG_ENABLE="已关闭"
+    fi
+    
+    save_config # 保存所有配置
+
+    # 如果服务在运行，立即重启
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        systemctl restart "$SERVICE_NAME"
+    fi
+    echo "✅ TG 配置已更新"
+}
+
+# ============================================
+# 修改运行参数 (新增功能)
+# ============================================
+modify_params() {
+    echo "============================="
+    echo "       修改运行参数"
+    echo "   (直接回车保持默认/当前值)"
+    echo "============================="
+
+    # 1. 监听端口
+    read -rp "1. 监听端口 [当前: $PORT]: " input
+    PORT=${input:-$PORT}
+
+    # 2. 目标IP
+    read -rp "2. 目标IP (IPv4/IPv6) [当前: $TARGET_IP]: " input
+    TARGET_IP=${input:-$TARGET_IP}
+
+    # 3. 延迟阈值
+    read -rp "3. 延迟阈值(ms) [当前: $LATENCY_THRESHOLD]: " input
+    LATENCY_THRESHOLD=${input:-$LATENCY_THRESHOLD}
+
+    # 4. 阻断时间
+    read -rp "4. 阻断时间(秒) [当前: $BLOCK_DURATION]: " input
+    BLOCK_DURATION=${input:-$BLOCK_DURATION}
+
+    # 5. 连续异常次数
+    read -rp "5. 连续异常次数 [当前: $REQUIRED_CONSECUTIVE]: " input
+    REQUIRED_CONSECUTIVE=${input:-$REQUIRED_CONSECUTIVE}
+
+    echo "-----------------------------"
+    echo "正在保存并应用新参数..."
+    
+    save_config         # 保存配置到文件
+    create_monitor_script # 重新生成后台脚本文件
+
+    # 重启服务
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        systemctl restart "$SERVICE_NAME"
+        echo "✅ 服务已重启，新参数已生效。"
+    else
+        echo "✅ 参数已保存 (服务未运行，启动后生效)。"
+    fi
+}
+
+# ============================================
+# 安装函数
+# ============================================
+install_monitor() {
+    echo "📥 开始安装程序..."
+    install_dependencies
+    
+    # 1. 询问端口 (支持回车默认)
+    read -rp "请输入监控端口 [默认 $PORT]: " USER_PORT
+    PORT="${USER_PORT:-$PORT}"
+
+    # 2. 进入 TG 配置
+    echo "-----------------------------"
+    setup_tg
+    echo "-----------------------------"
+
+    # 3. 生成后台脚本 (使用当前所有参数)
+    create_monitor_script
+
+    # 4. 创建 Systemd 服务
     cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
 Description=Ping Monitor
@@ -231,8 +303,16 @@ remove_monitor() {
 
     rm -f "/etc/systemd/system/$SERVICE_NAME" "$SCRIPT_PATH"
     rm -f "$CONFIG_FILE"
+    
+    # 重置变量为默认
     TG_ENABLE="已关闭"
     SERVER_NAME="未命名服务器"
+    PORT=$DEFAULT_PORT_VAL
+    TARGET_IP="2606:4700:4700::1111"
+    LATENCY_THRESHOLD=20
+    BLOCK_DURATION=120
+    REQUIRED_CONSECUTIVE=3
+
     systemctl daemon-reload
     echo "✅ 已完全清理"
 }
@@ -247,22 +327,25 @@ while true; do
 
     clear
     echo "============================="
-    echo " Ping Monitor 管理脚本 v1.1"
+    echo " Ping Monitor 管理脚本 v1.2"
     echo " by：Kook-9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控端口：$PORT丨最近阻断：$last_block"
+    echo "当前阈值：连续${REQUIRED_CONSECUTIVE}次超过${LATENCY_THRESHOLD}ms会阻断，然后${BLOCK_DURATION}秒后恢复"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
-    echo "3) 清理并复原"
+    echo "3) 修改运行参数"
+    echo "4) 清理并复原"
     echo "0) 退出"
     echo "============================="
-    read -rp "请输入选项 [0-3]: " choice
+    read -rp "请输入选项 [0-4]: " choice
     case "$choice" in
         1) install_monitor ;;
         2) setup_tg ;;
-        3) remove_monitor ;;
+        3) modify_params ;;
+        4) remove_monitor ;;
         0) exit 0 ;;
     esac
     read -p "按回车返回菜单..." 
