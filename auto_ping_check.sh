@@ -1,264 +1,191 @@
 #!/bin/bash
 # ============================================
-# Ping Monitor 管理脚本
+# Ping Monitor 管理脚本（IPv4 + IPv6 双栈，支持交互式端口输入）
 # 功能：
-# - 持续 ping IPv6 目标地址
-# - 延迟异常或中断时封禁端口（IPv4 + IPv6）
-# - 网络恢复并稳定后自动解封
-# - 使用 systemd 常驻运行
-# - 菜单显示状态、端口、最近阻断
-# - TG通知可选，自定义服务器备注
-# - TG 消息多行排版：名称 / 状态 / 时间
-# - 清理彻底，systemd稳定
+#   - 持续 ping IPv6 目标地址
+#   - 延迟异常或中断时封禁端口（IPv4 + IPv6）
+#   - 网络恢复并稳定后自动解封
+#   - 使用 systemd 常驻运行
 # ============================================
 
-# --------------------------
-# 【修改点0】明确 PATH
-export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+set -e
 
-# --------------------------
-# 原始参数
+# =========================
+# 默认参数
+# =========================
 DEFAULT_PORT=55555                   # 默认监听端口
-TARGET_IP="2606:4700:4700::1111"     # 对端IP地址（可填V4）
-LATENCY_THRESHOLD=10                 # 延迟阈值（ms）
+TARGET_IP="2606:4700:4700::1111"     # IPv6 对端地址
+LATENCY_THRESHOLD=20                 # 延迟阈值（ms）
 BLOCK_DURATION=120                   # 阻断时间（秒）
-REQUIRED_CONSECUTIVE=3               # 连续3次ping异常才阻断
 
 SERVICE_NAME="ping-monitor.service"
 SCRIPT_PATH="/root/check_ping_loop.sh"
-LAST_BLOCK_FILE="/root/ping_monitor_last_block.txt"
 
 # ============================================
-# 状态读取函数
+# 自动检测 Linux 发行版
 # ============================================
-get_service_status() {
-    systemctl is-active --quiet "$SERVICE_NAME" && echo "运行中" || echo "关闭"
-}
-
-get_tg_status() {
-    [ -f "$SCRIPT_PATH" ] && grep -q "^TG_ENABLE=1" "$SCRIPT_PATH" && echo "运行中" || echo "关闭"
-}
-
-get_monitor_port() {
-    [ -f "$SCRIPT_PATH" ] && grep "^LOCAL_PORT=" "$SCRIPT_PATH" | cut -d= -f2 || echo "-"
-}
-
-get_last_block_time() {
-    [ -f "$LAST_BLOCK_FILE" ] && cat "$LAST_BLOCK_FILE" || echo "无"
-}
-
-# ============================================
-# TG 设置
-# ============================================
-tg_settings() {
-    [ ! -f "$SCRIPT_PATH" ] && echo "❌ 服务未安装" && return
-    TG_ENABLE=$(grep "^TG_ENABLE=" "$SCRIPT_PATH" | cut -d= -f2)
-    if [ "$TG_ENABLE" != "1" ]; then
-        read -rp "是否启用 Telegram 通知？[Y/n]: " c
-        if [[ -z "$c" || "$c" =~ ^[Yy]$ ]]; then
-            read -rp "TG机器人Token: " token
-            read -rp "TG账号ID: " chat
-            read -rp "服务器备注: " SERVER_NAME
-            SERVER_NAME="${SERVER_NAME:-未命名服务器}"
-            sed -i "s/^TG_ENABLE=.*/TG_ENABLE=1/" "$SCRIPT_PATH"
-            sed -i "s|^TG_BOT_TOKEN=.*|TG_BOT_TOKEN=\"$token\"|" "$SCRIPT_PATH"
-            sed -i "s|^TG_CHAT_ID=.*|TG_CHAT_ID=\"$chat\"|" "$SCRIPT_PATH"
-            sed -i "s|^SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME\"|" "$SCRIPT_PATH"
-        fi
+detect_distro() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        DISTRO_ID="$ID"
+        DISTRO_LIKE="$ID_LIKE"
     else
-        echo "1) 修改 TG 配置"
-        echo "2) 关闭 TG 通知"
-        echo "0) 返回"
-        read -rp "请选择: " sub
-        case "$sub" in
-            1)
-                read -rp "新的TG机器人Token: " token
-                read -rp "新的TG账号ID: " chat
-                read -rp "新的服务器备注: " SERVER_NAME
-                SERVER_NAME="${SERVER_NAME:-未命名服务器}"
-                sed -i "s|^TG_BOT_TOKEN=.*|TG_BOT_TOKEN=\"$token\"|" "$SCRIPT_PATH"
-                sed -i "s|^TG_CHAT_ID=.*|TG_CHAT_ID=\"$chat\"|" "$SCRIPT_PATH"
-                sed -i "s|^SERVER_NAME=.*|SERVER_NAME=\"$SERVER_NAME\"|" "$SCRIPT_PATH"
-                ;;
-            2)
-                sed -i "s/^TG_ENABLE=.*/TG_ENABLE=0/" "$SCRIPT_PATH"
-                ;;
-        esac
+        echo "❌ 无法检测 Linux 发行版"
+        exit 1
     fi
-    systemctl restart "$SERVICE_NAME"
-    echo "✅ TG 设置已更新"
 }
 
 # ============================================
-# 安装监控
+# 自动安装 iptables / ip6tables
+# ============================================
+install_iptables() {
+    detect_distro
+
+    for cmd in iptables ip6tables; do
+        if ! command -v $cmd &>/dev/null; then
+            echo "📦 未检测到 $cmd，开始安装..."
+            case "$DISTRO_ID" in
+                ubuntu|debian)
+                    apt update
+                    DEBIAN_FRONTEND=noninteractive apt install -y iptables
+                    ;;
+                centos|rocky|almalinux|rhel)
+                    yum install -y iptables
+                    ;;
+                *)
+                    echo "❌ 不支持的发行版，请手动安装 $cmd"
+                    exit 1
+                    ;;
+            esac
+        fi
+    done
+
+    echo "✅ iptables / ip6tables 已就绪"
+}
+
+# ============================================
+# 安装监控服务
 # ============================================
 install_monitor() {
-    read -rp "请输入监控端口 [默认 $DEFAULT_PORT]: " p
-    PORT="${p:-$DEFAULT_PORT}"
+    echo "📥 开始安装 ping-monitor..."
 
-    read -rp "是否启用 Telegram 通知？[Y/n]: " c
-    if [[ -z "$c" || "$c" =~ ^[Yy]$ ]]; then
-        TG_ENABLE=1
-        read -rp "TG机器人Token: " TG_BOT_TOKEN
-        read -rp "TG账号ID: " TG_CHAT_ID
-        read -rp "服务器备注: " SERVER_NAME
-        SERVER_NAME="${SERVER_NAME:-未命名服务器}"
-    else
-        TG_ENABLE=0
-        TG_BOT_TOKEN=""
-        TG_CHAT_ID=""
-        SERVER_NAME="未命名服务器"
-    fi
+    install_iptables
 
-cat > "$SCRIPT_PATH" <<'EOF'
+    # 交互式输入端口
+    read -rp "请输入要监控的端口 [默认 $DEFAULT_PORT]: " USER_PORT
+    PORT="${USER_PORT:-$DEFAULT_PORT}"
+
+    echo "⚙️ 监控端口设置为: $PORT"
+
+    # ----------------------------
+    # 写入实际运行的监控脚本
+    # ----------------------------
+    cat << EOF > "$SCRIPT_PATH"
 #!/bin/bash
-# ============================================
-# Ping Monitor 循环脚本 v1.4
-# 修复 systemd PATH & iptables 问题
-# ============================================
+export LANG=C
+export LC_ALL=C
 
-TARGET_IP="2606:4700:4700::1111"
-LOCAL_PORT=55555
-LATENCY_THRESHOLD=10
-BLOCK_DURATION=120
-REQUIRED_CONSECUTIVE=3
+TARGET_IP="$TARGET_IP"
+LOCAL_PORT=$PORT
+LATENCY_THRESHOLD=$LATENCY_THRESHOLD
+BLOCK_DURATION=$BLOCK_DURATION
 
-TG_ENABLE=1
-TG_BOT_TOKEN=""
-TG_CHAT_ID=""
-SERVER_NAME="未命名服务器"
-LAST_BLOCK_FILE="/root/ping_monitor_last_block.txt"
-
+# 阻断状态
 port_blocked=false
 block_start_time=0
+
+# 连续异常计数（只在未阻断时生效）
 HIGH_LATENCY_COUNT=0
-recovery_count=0
+REQUIRED_CONSECUTIVE=3
 
-# 使用绝对路径确保 systemd 启动能找到
-IPTABLES=/usr/sbin/iptables
-IP6TABLES=/usr/sbin/ip6tables
-PING=/bin/ping
-CURL=/usr/bin/curl
-
-# --------------------------------------------
-# 判断端口是否阻断
-is_port_blocked() {
-    $IPTABLES -C INPUT -p tcp --dport $LOCAL_PORT -j DROP &>/dev/null || \
-    $IP6TABLES -C INPUT -p tcp --dport $LOCAL_PORT -j DROP &>/dev/null
-}
-
-# --------------------------------------------
-# 清理已有防火墙规则
+# ----------------------------
+# 清理端口规则
+# ----------------------------
 clean_rules() {
-    for CMD in $IPTABLES $IP6TABLES; do
+    for proto in iptables ip6tables; do
         while true; do
-            NUM=$($CMD -L INPUT --line-numbers -n | grep "tcp dpt:$LOCAL_PORT" | awk '{print $1}' | head -n1)
-            [ -z "$NUM" ] && break
-            $CMD -D INPUT $NUM
+            num=\$($proto -L INPUT --line-numbers -n | grep "tcp dpt:\$LOCAL_PORT" | awk '{print \$1}' | head -n1)
+            [ -z "\$num" ] && break
+            \$proto -D INPUT \$num
         done
     done
 }
 
-# --------------------------------------------
-# 发送 TG 阻断消息
-send_tg_block() {
-    [ "$TG_ENABLE" != "1" ] && return
-    TIME_NOW=$(date '+%F %T')
-    $CURL -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TG_CHAT_ID}" \
-        -d text="💻 名称：$SERVER_NAME
-⚠️ 状态：$LOCAL_PORT 端口已阻断
-⏰ 时间：$TIME_NOW" >/dev/null
+is_port_blocked() {
+    iptables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null || \
+    ip6tables -C INPUT -p tcp --dport \$LOCAL_PORT -j DROP &>/dev/null
 }
 
-# --------------------------------------------
-# 发送 TG 恢复消息
-send_tg_unblock() {
-    [ "$TG_ENABLE" != "1" ] && return
-    TIME_NOW=$(date '+%F %T')
-    $CURL -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${TG_CHAT_ID}" \
-        -d text="💻 名称：$SERVER_NAME
-✅ 状态：$LOCAL_PORT 端口已恢复
-⏰ 时间：$TIME_NOW" >/dev/null
-}
-
-# --------------------------------------------
-# 启动时同步防火墙状态
-if is_port_blocked; then
-    port_blocked=true
-    block_start_time=$(date +%s)
-fi
-
-# --------------------------------------------
-# 阻断端口
 block_port() {
     clean_rules
-    $IPTABLES -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
-    $IP6TABLES -A INPUT -p tcp --dport $LOCAL_PORT -j DROP
-    echo "$(date '+%F %T')" > "$LAST_BLOCK_FILE"
-    send_tg_block
-    echo "$(date '+%F %T') ⚠️ 连续 $REQUIRED_CONSECUTIVE 次异常，已关闭端口 $LOCAL_PORT"
+    iptables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
+    ip6tables -A INPUT -p tcp --dpt \$LOCAL_PORT -j DROP
+    echo "\$(date '+%F %T') ⚠️ 连续 \$REQUIRED_CONSECUTIVE 次异常，已关闭端口 \$LOCAL_PORT"
     port_blocked=true
-    block_start_time=$(date +%s)
-    recovery_count=0
+    block_start_time=\$(date +%s)
 }
 
-# --------------------------------------------
-# 解除阻断
 unblock_port() {
     clean_rules
-    echo "$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 $LOCAL_PORT"
-    send_tg_unblock
+    echo "\$(date '+%F %T') ✅ 阻断时间结束，端口已恢复 \$LOCAL_PORT"
     port_blocked=false
     block_start_time=0
     HIGH_LATENCY_COUNT=0
-    recovery_count=0
 }
 
-# --------------------------------------------
-# 主循环：ping + 阻断逻辑
+# ----------------------------
+# 主循环
+# ----------------------------
 while true; do
-    PING_OUTPUT=$($PING -6 -c 1 -W 1 $TARGET_IP 2>/dev/null)
-    LATENCY=$(echo "$PING_OUTPUT" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
-    LATENCY_INT=0
-    [ -n "$LATENCY" ] && LATENCY_INT=${LATENCY%.*}
+    ping_output=\$(ping -6 -c 1 -W 1 \$TARGET_IP 2>/dev/null)
+    latency=\$(echo "\$ping_output" | grep "time=" | sed -E 's/.*time=([0-9.]+).*/\1/')
 
-    if [ "$port_blocked" = false ]; then
-        if [ -z "$LATENCY" ] || [ "$LATENCY_INT" -ge "$LATENCY_THRESHOLD" ]; then
-            HIGH_LATENCY_COUNT=$((HIGH_LATENCY_COUNT+1))
+    # ========================
+    # 未阻断状态：统计连续异常
+    # ========================
+    if ! \$port_blocked; then
+        if [ -z "\$latency" ]; then
+            HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
+            echo "\$(date '+%F %T') ❌ ping 失败（连续 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE）"
         else
-            HIGH_LATENCY_COUNT=0
-        fi
-
-        if [ "$HIGH_LATENCY_COUNT" -ge "$REQUIRED_CONSECUTIVE" ]; then
-            block_port
-        fi
-    else
-        NOW=$(date +%s)
-        ELAPSED=$((NOW - block_start_time))
-        if [ "$ELAPSED" -ge "$BLOCK_DURATION" ]; then
-            unblock_port
-        else
-            if [ -n "$LATENCY" ] && [ "$LATENCY_INT" -lt "$LATENCY_THRESHOLD" ]; then
-                recovery_count=$((recovery_count+1))
-                if [ "$recovery_count" -ge 3 ]; then
-                    unblock_port
-                fi
+            latency_int=\${latency%.*}
+            echo "\$(date '+%F %T') 延迟 \${latency}ms"
+            if [ "\$latency_int" -ge "\$LATENCY_THRESHOLD" ]; then
+                HIGH_LATENCY_COUNT=\$((HIGH_LATENCY_COUNT + 1))
+                echo "\$(date '+%F %T') ⚠️ 高延迟计数 \$HIGH_LATENCY_COUNT/\$REQUIRED_CONSECUTIVE"
             else
-                recovery_count=0
+                HIGH_LATENCY_COUNT=0
             fi
         fi
+
+        if [ "\$HIGH_LATENCY_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
+            block_port
+        fi
+
+    # ========================
+    # 已阻断状态：只判断时间
+    # ========================
+    else
+        now=\$(date +%s)
+        elapsed=\$((now - block_start_time))
+
+        if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
+            unblock_port
+        else
+            echo "\$(date '+%F %T') ⏳ 端口已阻断，剩余等待 \$((BLOCK_DURATION - elapsed)) 秒"
+        fi
     fi
+
     sleep 5
 done
 EOF
 
     chmod +x "$SCRIPT_PATH"
 
-    # --------------------------------------------
+    # ----------------------------
     # systemd 服务文件
-cat <<EOF >/etc/systemd/system/$SERVICE_NAME
+    # ----------------------------
+    cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
 Description=Ping Monitor - Auto Close Port $PORT (IPv4 + IPv6)
 After=network-online.target
@@ -284,53 +211,61 @@ EOF
 }
 
 # ============================================
-# 清理函数
+# 清理服务和端口规则
 # ============================================
 remove_monitor() {
+    echo "🛑 停止并清理服务..."
+
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     rm -f "/etc/systemd/system/$SERVICE_NAME"
-    rm -f "/etc/systemd/system/multi-user.target.wants/$SERVICE_NAME"
     systemctl daemon-reload
 
     rm -f "$SCRIPT_PATH"
-    rm -f "$LAST_BLOCK_FILE"
 
-    for T in /usr/sbin/iptables /usr/sbin/ip6tables; do
+    echo "🧹 清理 iptables / ip6tables 规则..."
+    for proto in iptables ip6tables; do
         while true; do
-            N=$($T -L INPUT --line-numbers -n | grep "tcp dpt:$DEFAULT_PORT" | awk '{print $1}' | head -n1)
-            [ -z "$N" ] && break
-            $T -D INPUT $N
+            num=$($proto -L INPUT --line-numbers -n | grep "tcp dpt:$PORT" | awk '{print $1}' | head -n1)
+            [ -z "$num" ] && break
+            $proto -D INPUT $num
         done
     done
 
-    echo "✅ 已完全复原"
+    echo "✅ 已完全清理并复原"
 }
 
 # ============================================
-# 菜单
+# 交互菜单
 # ============================================
 show_menu() {
     echo "============================="
     echo " Ping Monitor 管理脚本 v1.1"
+    echo " by：Kook-9527"
     echo "============================="
-    echo " 脚本状态：$(get_service_status) 丨TG 通知 ：$(get_tg_status)"
-    echo " 监控端口：$(get_monitor_port)  丨最近阻断：$(get_last_block_time)"
-    echo "-----------------------------"
     echo "1) 安装并启动监控"
     echo "2) 清理并复原"
-    echo "3) TG通知设置"
     echo "0) 退出"
     echo "============================="
-    read -rp "请选择: " c
+    read -rp "请输入选项 [0-2]: " choice
 
-    case "$c" in
+    case "$choice" in
         1) install_monitor ;;
         2) remove_monitor ;;
-        3) tg_settings ;;
         0) exit 0 ;;
+        *) echo "无效输入" ;;
     esac
 }
 
-# 启动菜单
-show_menu
+# ============================================
+# 脚本入口
+# ============================================
+if [ -n "$1" ]; then
+    case "$1" in
+        1) install_monitor ;;
+        2) remove_monitor ;;
+        *) echo "用法: $0 {1|2}" ;;
+    esac
+else
+    show_menu
+fi
