@@ -55,8 +55,8 @@ setup_tg() {
     choice=${choice:-y}
     if [[ "$choice" == [yY] ]]; then
         read -rp "请输入此服务器备注名称: " SERVER_NAME
-        read -rp "请输入 TG Bot Token: " TG_TOKEN
-        read -rp "请输入 TG Chat ID: " TG_CHATID
+        read -rp "请输入TG机器人Token: " TG_TOKEN  
+        read -rp "请输入TG账号ID: " TG_CHATID
         TG_ENABLE="已开启"
     else
         TG_ENABLE="已关闭"
