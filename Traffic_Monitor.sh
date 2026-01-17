@@ -14,10 +14,10 @@ set -e
 # =========================
 # 默认参数定义
 # =========================
-DEFAULT_PORT_VAL=55555             # 默认监听端口
-DIFF_THRESHOLD=20                  # 流量差值阈值 (Mbps)
+DEFAULT_PORT_VAL=55555             # 阻断监听端口
+DIFF_THRESHOLD=5                   # 流量差值阈值 (Mbps)
 BLOCK_DURATION=300                 # 阻断时间 (秒)
-REQUIRED_CONSECUTIVE=3             # 连续异常计数 (秒)
+REQUIRED_CONSECUTIVE=30            # 连续异常计数 (秒)
 NET_INTERFACE=""                   # 网卡名称 (留空则自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
