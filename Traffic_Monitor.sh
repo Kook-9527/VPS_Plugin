@@ -13,9 +13,9 @@ set -e
 # 默认参数
 # =========================
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
-DIFF_THRESHOLD=5                   # 流量差值阈值 (Mbps)
+DIFF_THRESHOLD=3                   # 流量差值阈值 (Mbps)
 BLOCK_DURATION=300                 # 阻断时间 (秒)
-REQUIRED_CONSECUTIVE=60            # 连续异常计数 (秒)
+REQUIRED_CONSECUTIVE=120           # 连续异常计数 (秒)
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
