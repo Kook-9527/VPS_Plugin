@@ -254,22 +254,22 @@ modify_params() {
     echo "   (直接回车保持默认/当前值)"
     echo "============================="
 
-    read -rp "1. 目标阻断端口 (BLOCK_PORT) [当前: $BLOCK_PORT]: " input
+    read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input
     BLOCK_PORT=${input:-$BLOCK_PORT}
 
-    read -rp "2. 流量差值阈值 Mbps (DIFF_THRESHOLD) [当前: $DIFF_THRESHOLD]: " input
+    read -rp "2. 流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input
     DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
     
-    read -rp "3. 检测时间窗口 秒 (WINDOW_DURATION) [当前: $WINDOW_DURATION]: " input
+    read -rp "3. 检测时间窗口：秒  [当前: $WINDOW_DURATION]: " input
     WINDOW_DURATION=${input:-$WINDOW_DURATION}
 
-    read -rp "4. 窗口内触发次数 (TRIGGER_COUNT) [当前: $TRIGGER_COUNT]: " input
+    read -rp "4. 窗口内触发次数 [当前: $TRIGGER_COUNT]: " input
     TRIGGER_COUNT=${input:-$TRIGGER_COUNT}
 
-    read -rp "5. 阻断持续时间 秒 (BLOCK_DURATION) [当前: $BLOCK_DURATION]: " input
+    read -rp "5. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input
     BLOCK_DURATION=${input:-$BLOCK_DURATION}
 
-    read -rp "6. 监控网卡接口 (NET_INTERFACE) [当前: $NET_INTERFACE]: " input
+    read -rp "6. 监控网卡接口 [当前: $NET_INTERFACE]: " input
     NET_INTERFACE=${input:-$NET_INTERFACE}
 
     echo "-----------------------------"
@@ -362,6 +362,7 @@ while true; do
     clear
     echo "============================="
     echo " 智能流量密度监控 v1.0"
+    echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：Port $BLOCK_PORT"
