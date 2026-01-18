@@ -4,7 +4,7 @@
 # 核心逻辑：
 #   1. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口。
 #   2. 每秒检测一次全网卡流量差值。
-#   3. 如果过去 60秒 内，有 40次 以上差值超过 3Mbps，则判定为攻击。
+#   3. 如果过去 60秒 内，有 20次 以上差值超过 3Mbps，则判定为攻击。
 #   4. 触发阻断指定端口 (如 55555)。
 # ============================================
 
@@ -17,7 +17,7 @@ DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
 DIFF_THRESHOLD=2                   # 流量差值阈值 (Mbps)
 BLOCK_DURATION=280                 # 阻断时间 (秒)
 WINDOW_DURATION=60                 # 检测时间窗口 (秒)
-TRIGGER_COUNT=30                   # 窗口内触发次数阈值
+TRIGGER_COUNT=20                   # 窗口内触发次数阈值
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
@@ -361,17 +361,16 @@ while true; do
 
     clear
     echo "============================="
-    echo " 智能流量密度监控 v2.0"
-    echo " 逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
+    echo " 智能流量密度监控 v1.0"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
-    echo "监控网卡：$NET_INTERFACE"
-    echo "目标阻断：Port $BLOCK_PORT"
+    echo "监控网卡：$NET_INTERFACE丨阻断端口：Port $BLOCK_PORT"
     echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps"
+    echo "逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
-    echo "3) 修改参数 (端口/阈值/窗口/次数)"
+    echo "3) 修改脚本参数"
     echo "4) 清理并复原"
     echo "0) 退出"
     echo "============================="
