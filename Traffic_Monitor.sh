@@ -15,7 +15,7 @@ set -e
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
 DIFF_THRESHOLD=3                   # 流量差值阈值 (Mbps)
 BLOCK_DURATION=300                 # 阻断时间 (秒)
-REQUIRED_CONSECUTIVE=120           # 连续异常计数 (秒)
+REQUIRED_CONSECUTIVE=60            # 连续异常计数 (秒)
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
@@ -230,19 +230,19 @@ modify_params() {
     echo "   (直接回车保持默认/当前值)"
     echo "============================="
 
-    read -rp "1. 目标阻断端口 (BLOCK_PORT) - 攻击时封锁此端口 [当前: $BLOCK_PORT]: " input
+    read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input
     BLOCK_PORT=${input:-$BLOCK_PORT}
 
-    read -rp "2. 全局流量差值阈值 Mbps (DIFF_THRESHOLD) [当前: $DIFF_THRESHOLD]: " input
+    read -rp "2. 全局流量差值阈值：Mbps [当前: $DIFF_THRESHOLD]: " input
     DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
 
-    read -rp "3. 阻断持续时间 秒 (BLOCK_DURATION) [当前: $BLOCK_DURATION]: " input
+    read -rp "3. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input
     BLOCK_DURATION=${input:-$BLOCK_DURATION}
 
-    read -rp "4. 连续异常判断次数 (REQUIRED_CONSECUTIVE) [当前: $REQUIRED_CONSECUTIVE]: " input
+    read -rp "4. 连续异常判断次数 [当前: $REQUIRED_CONSECUTIVE]: " input
     REQUIRED_CONSECUTIVE=${input:-$REQUIRED_CONSECUTIVE}
 
-    read -rp "5. 监控网卡接口 (NET_INTERFACE) [当前: $NET_INTERFACE]: " input
+    read -rp "5. 监控网卡接口 [当前: $NET_INTERFACE]: " input
     NET_INTERFACE=${input:-$NET_INTERFACE}
 
     echo "-----------------------------"
