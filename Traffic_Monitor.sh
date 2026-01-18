@@ -1,10 +1,11 @@
 #!/bin/bash
 # ============================================
-# 全局流量差值监控 & 端口阻断脚本
+# 智能流量密度监控 & 端口阻断脚本 (滑动窗口版)
 # 核心逻辑：
-#   1. 监控 指定网卡(如eth0) 的全局 上行/下行 流量。
-#   2. 如果 (下载 - 上传) 的差值超过阈值 (说明流量不对称，可能是攻击)。
-#   3. 连续多次触发后，使用防火墙阻断 指定端口 (如55555)。
+#   1. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口。
+#   2. 每秒检测一次全网卡流量差值。
+#   3. 如果过去 60秒 内，有 40次 以上差值超过 3Mbps，则判定为攻击。
+#   4. 触发阻断指定端口 (如 55555)。
 # ============================================
 
 set -e
@@ -13,9 +14,10 @@ set -e
 # 默认参数
 # =========================
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
-DIFF_THRESHOLD=3                   # 流量差值阈值 (Mbps)
-BLOCK_DURATION=200                 # 阻断时间 (秒)
-REQUIRED_CONSECUTIVE=15            # 连续异常计数 (秒)
+DIFF_THRESHOLD=2                   # 流量差值阈值 (Mbps)
+BLOCK_DURATION=280                 # 阻断时间 (秒)
+WINDOW_DURATION=60                 # 检测时间窗口 (秒)
+TRIGGER_COUNT=30                   # 窗口内触发次数阈值
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
@@ -39,10 +41,11 @@ TG_ENABLE=${TG_ENABLE:-"已关闭"}
 TG_TOKEN=${TG_TOKEN:-""}
 TG_CHATID=${TG_CHATID:-""}
 SERVER_NAME=${SERVER_NAME:-"未命名服务器"}
-BLOCK_PORT=${BLOCK_PORT:-$DEFAULT_BLOCK_PORT}  # 变量名改为 BLOCK_PORT 以示区分
-DIFF_THRESHOLD=${DIFF_THRESHOLD:-20}
+BLOCK_PORT=${BLOCK_PORT:-$DEFAULT_BLOCK_PORT}
+DIFF_THRESHOLD=${DIFF_THRESHOLD:-3}
 BLOCK_DURATION=${BLOCK_DURATION:-300}
-REQUIRED_CONSECUTIVE=${REQUIRED_CONSECUTIVE:-3}
+WINDOW_DURATION=${WINDOW_DURATION:-60}
+TRIGGER_COUNT=${TRIGGER_COUNT:-40}
 
 install_dependencies() {
     if [ -f /etc/os-release ]; then . /etc/os-release; DISTRO_ID="$ID"; fi
@@ -65,13 +68,14 @@ SERVER_NAME="$SERVER_NAME"
 BLOCK_PORT="$BLOCK_PORT"
 DIFF_THRESHOLD="$DIFF_THRESHOLD"
 BLOCK_DURATION="$BLOCK_DURATION"
-REQUIRED_CONSECUTIVE="$REQUIRED_CONSECUTIVE"
+WINDOW_DURATION="$WINDOW_DURATION"
+TRIGGER_COUNT="$TRIGGER_COUNT"
 NET_INTERFACE="$NET_INTERFACE"
 EOF
 }
 
 # ============================================
-# 生成核心监控脚本
+# 生成核心监控脚本 (滑动窗口逻辑)
 # ============================================
 create_monitor_script() {
     cat << EOF > "$SCRIPT_PATH"
@@ -85,11 +89,12 @@ if [ -f "\$CONFIG_FILE" ]; then
 fi
 
 # 关键变量
-TARGET_PORT=\$BLOCK_PORT        # 这里是要被封锁的端口
+TARGET_PORT=\$BLOCK_PORT
 DIFF_THRESHOLD=$DIFF_THRESHOLD
 BLOCK_DURATION=$BLOCK_DURATION
-REQUIRED_CONSECUTIVE=$REQUIRED_CONSECUTIVE
-INTERFACE="$NET_INTERFACE"      # 这里是负责监控的网卡
+WINDOW_DURATION=$WINDOW_DURATION
+TRIGGER_COUNT=$TRIGGER_COUNT
+INTERFACE="$NET_INTERFACE"
 
 # 检查网卡
 if [ -z "\$INTERFACE" ] || [ ! -d "/sys/class/net/\$INTERFACE" ]; then
@@ -110,12 +115,13 @@ send_tg() {
 
 port_blocked=false
 block_start_time=0
-HIGH_DIFF_COUNT=0
+
+# 初始化滑动窗口数组
+history_window=()
 
 clean_rules() {
     for proto in iptables ip6tables; do
         while true; do
-            # 查找针对目标端口的 DROP 规则
             num=\$([ "\$proto" = "iptables" ] && iptables -L INPUT --line-numbers -n | grep "tcp dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1 || ip6tables -L INPUT --line-numbers -n | grep "tcp dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1)
             [ -z "\$num" ] && break
             if [ "\$proto" = "iptables" ]; then
@@ -129,15 +135,16 @@ clean_rules() {
 
 block_port() {
     clean_rules
-    # 执行阻断：无论攻击来自哪里，直接把这个端口封死
     iptables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
     ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
     
-    echo "\$(date '+%F %T') ⚠️ 全局流量异常 (连续 \$REQUIRED_CONSECUTIVE 次差值 > \${DIFF_THRESHOLD}Mbps)"
+    echo "\$(date '+%F %T') ⚠️ 密度检测报警 (近 \$WINDOW_DURATION 秒内有 \$total_bad 次异常)"
     echo "   ↳ 🚫 已执行防御：阻断端口 \$TARGET_PORT"
-    send_tg "⚠️ 警告：检测到流量攻击，已阻断端口 \$TARGET_PORT"
+    send_tg "⚠️ 警告：检测到持续攻击 (密度 \$total_bad/\$WINDOW_DURATION)，已阻断端口 \$TARGET_PORT"
     port_blocked=true
     block_start_time=\$(date +%s)
+    # 清空历史，避免刚解封又触发
+    history_window=()
 }
 
 unblock_port() {
@@ -146,7 +153,7 @@ unblock_port() {
     send_tg "✅ 恢复：端口 \$TARGET_PORT 已解封"
     port_blocked=false
     block_start_time=0
-    HIGH_DIFF_COUNT=0
+    history_window=()
 }
 
 get_bytes() {
@@ -159,7 +166,7 @@ while true; do
         sleep 1
         read rx2 tx2 <<< \$(get_bytes)
 
-        # 计算整机网卡的实时流量差值
+        # 1. 计算当前这一秒的状态
         stats=\$(awk -v r1=\$rx1 -v r2=\$rx2 -v t1=\$tx1 -v t2=\$tx2 'BEGIN {
             rx_speed = (r2 - r1) * 8 / 1024 / 1024;
             tx_speed = (t2 - t1) * 8 / 1024 / 1024;
@@ -170,27 +177,44 @@ while true; do
         
         read rx_mbps tx_mbps diff_mbps <<< "\$stats"
 
-        echo "\$(date '+%F %T') [网卡:\$INTERFACE] ↓下载:\${rx_mbps} | ↑上传:\${tx_mbps} | Δ差值:\${diff_mbps} Mbps"
-
-        is_high=\$(awk -v diff="\$diff_mbps" -v thresh="\$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
-
-        if [ "\$is_high" -eq 1 ]; then
-            HIGH_DIFF_COUNT=\$((HIGH_DIFF_COUNT + 1))
-            echo "   ↳ ⚠️ 流量差值异常 (\$HIGH_DIFF_COUNT/\$REQUIRED_CONSECUTIVE)"
-        else
-            HIGH_DIFF_COUNT=0
+        # 判断这一秒是否“坏” (超过阈值)
+        is_bad=\$(awk -v diff="\$diff_mbps" -v thresh="\$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
+        
+        # 2. 加入滑动窗口 (记录历史)
+        history_window+=(\$is_bad)
+        
+        # 3. 保持窗口大小不超过设定值 (比如60)
+        if [ \${#history_window[@]} -gt \$WINDOW_DURATION ]; then
+            # 删除数组第一个元素 (最早的记录)
+            history_window=("\${history_window[@]:1}")
         fi
+        
+        # 4. 统计窗口内的坏秒数
+        total_bad=0
+        for val in "\${history_window[@]}"; do
+            total_bad=\$((total_bad + val))
+        done
 
-        if [ "\$HIGH_DIFF_COUNT" -ge "\$REQUIRED_CONSECUTIVE" ]; then
+        # 显示状态
+        if [ "\$is_bad" -eq 1 ]; then
+            bad_mark="[⚠️ 异常]"
+        else
+            bad_mark="[OK]"
+        fi
+        echo "\$(date '+%F %T') \$bad_mark 差值:\${diff_mbps}Mbps | 密度: \${total_bad}/\${WINDOW_DURATION}"
+
+        # 5. 触发判断
+        if [ "\$total_bad" -ge "\$TRIGGER_COUNT" ]; then
             block_port
         fi
     else
+        # 阻断中...
         now=\$(date +%s)
         elapsed=\$((now - block_start_time))
         if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
             unblock_port
         else
-            echo "\$(date '+%F %T') ⏳ 防御生效中(端口 \$TARGET_PORT 已封)，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
+            echo "\$(date '+%F %T') ⏳ 防御生效中，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
             sleep 5
         fi
     fi
@@ -222,7 +246,7 @@ setup_tg() {
 }
 
 # ============================================
-# 修改参数 (已优化文案)
+# 修改参数 (已更新为滑动窗口参数)
 # ============================================
 modify_params() {
     echo "============================="
@@ -230,19 +254,22 @@ modify_params() {
     echo "   (直接回车保持默认/当前值)"
     echo "============================="
 
-    read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input
+    read -rp "1. 目标阻断端口 (BLOCK_PORT) [当前: $BLOCK_PORT]: " input
     BLOCK_PORT=${input:-$BLOCK_PORT}
 
-    read -rp "2. 全局流量差值阈值：Mbps [当前: $DIFF_THRESHOLD]: " input
+    read -rp "2. 流量差值阈值 Mbps (DIFF_THRESHOLD) [当前: $DIFF_THRESHOLD]: " input
     DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
-
-    read -rp "3. 连续被打时间：秒 [当前: $REQUIRED_CONSECUTIVE]: " input
-    REQUIRED_CONSECUTIVE=${input:-$REQUIRED_CONSECUTIVE}
-
-    read -rp "4. 端口阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input
-    BLOCK_DURATION=${input:-$BLOCK_DURATION}
     
-    read -rp "5. 监控网卡接口 [当前: $NET_INTERFACE]: " input
+    read -rp "3. 检测时间窗口 秒 (WINDOW_DURATION) [当前: $WINDOW_DURATION]: " input
+    WINDOW_DURATION=${input:-$WINDOW_DURATION}
+
+    read -rp "4. 窗口内触发次数 (TRIGGER_COUNT) [当前: $TRIGGER_COUNT]: " input
+    TRIGGER_COUNT=${input:-$TRIGGER_COUNT}
+
+    read -rp "5. 阻断持续时间 秒 (BLOCK_DURATION) [当前: $BLOCK_DURATION]: " input
+    BLOCK_DURATION=${input:-$BLOCK_DURATION}
+
+    read -rp "6. 监控网卡接口 (NET_INTERFACE) [当前: $NET_INTERFACE]: " input
     NET_INTERFACE=${input:-$NET_INTERFACE}
 
     echo "-----------------------------"
@@ -251,7 +278,7 @@ modify_params() {
     create_monitor_script
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         systemctl restart "$SERVICE_NAME"
-        echo "✅ 服务已重启，新参数已生效。"
+        echo "✅ 服务已重启，新逻辑已生效。"
     else
         echo "✅ 参数已保存。"
     fi
@@ -276,7 +303,7 @@ install_monitor() {
 
     cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
-Description=Global Traffic Monitor
+Description=Traffic Monitor (Sliding Window)
 After=network.target
 
 [Service]
@@ -292,7 +319,7 @@ EOF
     systemctl daemon-reload
     systemctl enable --now "$SERVICE_NAME"
     systemctl restart "$SERVICE_NAME"
-    echo "✅ 安装成功，全网卡监控服务已启动"
+    echo "✅ 安装成功，智能密度监控已启动"
 }
 
 remove_monitor() {
@@ -300,7 +327,6 @@ remove_monitor() {
     systemctl stop "$SERVICE_NAME" 2>/dev/null || true
     systemctl disable "$SERVICE_NAME" 2>/dev/null || true
     
-    # 清理防火墙
     for proto in iptables ip6tables; do
         while true; do
             num=$($proto -L INPUT --line-numbers -n | grep "tcp dpt:$BLOCK_PORT" | awk '{print $1}' | head -n1)
@@ -315,9 +341,10 @@ remove_monitor() {
     TG_ENABLE="已关闭"
     SERVER_NAME="未命名服务器"
     BLOCK_PORT=$DEFAULT_BLOCK_PORT
-    DIFF_THRESHOLD=20
+    DIFF_THRESHOLD=3
     BLOCK_DURATION=300
-    REQUIRED_CONSECUTIVE=3
+    WINDOW_DURATION=60
+    TRIGGER_COUNT=40
     NET_INTERFACE=$(ip route get 8.8.8.8 | awk '{print $5; exit}')
 
     systemctl daemon-reload
@@ -334,18 +361,17 @@ while true; do
 
     clear
     echo "============================="
-    echo " 全局流量监控 & 端口阻断脚本 v1"
-    echo " 功能：整机流量异常 -> 封锁特定端口"
-    echo " by：Kook-9527"
+    echo " 智能流量密度监控 v2.0"
+    echo " 逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
-    echo "监控网卡：$NET_INTERFACE (所有端口流量)"
+    echo "监控网卡：$NET_INTERFACE"
     echo "目标阻断：Port $BLOCK_PORT"
-    echo "触发条件：上传/下载差值>${DIFF_THRESHOLD}Mbps(持续${REQUIRED_CONSECUTIVE}秒)即阻断端口${BLOCK_DURATION}秒"
+    echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
-    echo "3) 修改脚本参数"
+    echo "3) 修改参数 (端口/阈值/窗口/次数)"
     echo "4) 清理并复原"
     echo "0) 退出"
     echo "============================="
