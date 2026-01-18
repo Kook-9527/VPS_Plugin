@@ -336,6 +336,7 @@ while true; do
     echo "============================="
     echo " 全局流量监控 & 端口阻断脚本 v1"
     echo " 功能：整机流量异常 -> 封锁特定端口"
+    echo " by：Kook-9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE (所有端口流量)"
