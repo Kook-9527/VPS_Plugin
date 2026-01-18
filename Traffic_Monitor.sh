@@ -4,7 +4,7 @@
 # 核心逻辑：
 #   1. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口。
 #   2. 每秒检测一次全网卡流量差值。
-#   3. 如果过去 60秒 内，有 20次 以上差值超过 3Mbps，则判定为攻击。
+#   3. 如果过去45秒内，有15次 以上差值超过2Mbps，则判定为攻击。
 #   4. 触发阻断指定端口 (如 55555)。
 # ============================================
 
@@ -15,9 +15,9 @@ set -e
 # =========================
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
 DIFF_THRESHOLD=2                   # 流量差值阈值 (Mbps)
-BLOCK_DURATION=280                 # 阻断时间 (秒)
-WINDOW_DURATION=60                 # 检测时间窗口 (秒)
-TRIGGER_COUNT=20                   # 窗口内触发次数阈值
+BLOCK_DURATION=250                 # 阻断时间 (秒)
+WINDOW_DURATION=45                 # 检测时间窗口 (秒)
+TRIGGER_COUNT=15                   # 窗口内触发次数阈值
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
