@@ -239,7 +239,7 @@ modify_params() {
     read -rp "3. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input
     BLOCK_DURATION=${input:-$BLOCK_DURATION}
 
-    read -rp "4. 连续异常判断次数 [当前: $REQUIRED_CONSECUTIVE]: " input
+    read -rp "4. 连续被D时间：秒 [当前: $REQUIRED_CONSECUTIVE]: " input
     REQUIRED_CONSECUTIVE=${input:-$REQUIRED_CONSECUTIVE}
 
     read -rp "5. 监控网卡接口 [当前: $NET_INTERFACE]: " input
@@ -341,7 +341,7 @@ while true; do
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE (所有端口流量)"
     echo "目标阻断：Port $BLOCK_PORT"
-    echo "触发条件：上传/下载差值>${DIFF_THRESHOLD}Mbps (持续${REQUIRED_CONSECUTIVE}秒)即阻断${BLOCK_DURATION}秒"
+    echo "触发条件：上传/下载差值>${DIFF_THRESHOLD}Mbps(持续${REQUIRED_CONSECUTIVE}秒)即阻断${BLOCK_DURATION}秒"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
