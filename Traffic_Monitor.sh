@@ -14,8 +14,8 @@ set -e
 # =========================
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
 DIFF_THRESHOLD=3                   # 流量差值阈值 (Mbps)
-BLOCK_DURATION=300                 # 阻断时间 (秒)
-REQUIRED_CONSECUTIVE=30            # 连续异常计数 (秒)
+BLOCK_DURATION=200                 # 阻断时间 (秒)
+REQUIRED_CONSECUTIVE=15            # 连续异常计数 (秒)
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
@@ -236,12 +236,12 @@ modify_params() {
     read -rp "2. 全局流量差值阈值：Mbps [当前: $DIFF_THRESHOLD]: " input
     DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
 
-    read -rp "3. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input
-    BLOCK_DURATION=${input:-$BLOCK_DURATION}
-
-    read -rp "4. 连续被D时间：秒 [当前: $REQUIRED_CONSECUTIVE]: " input
+    read -rp "3. 连续被打时间：秒 [当前: $REQUIRED_CONSECUTIVE]: " input
     REQUIRED_CONSECUTIVE=${input:-$REQUIRED_CONSECUTIVE}
 
+    read -rp "4. 端口阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input
+    BLOCK_DURATION=${input:-$BLOCK_DURATION}
+    
     read -rp "5. 监控网卡接口 [当前: $NET_INTERFACE]: " input
     NET_INTERFACE=${input:-$NET_INTERFACE}
 
@@ -341,7 +341,7 @@ while true; do
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE (所有端口流量)"
     echo "目标阻断：Port $BLOCK_PORT"
-    echo "触发条件：上传/下载差值>${DIFF_THRESHOLD}Mbps(持续${REQUIRED_CONSECUTIVE}秒)即阻断${BLOCK_DURATION}秒"
+    echo "触发条件：上传/下载差值>${DIFF_THRESHOLD}Mbps(持续${REQUIRED_CONSECUTIVE}秒)即阻断端口${BLOCK_DURATION}秒"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
