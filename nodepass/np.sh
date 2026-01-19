@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # 脚本版本号
-SCRIPT_VERSION='0.3.7-Absolute-Final'
+SCRIPT_VERSION='0.0.1'
 
 export DEBIAN_FRONTEND=noninteractive
 TEMP_DIR='/tmp/nodepass'
@@ -11,7 +11,7 @@ WORK_DIR='/etc/nodepass'
 trap "rm -rf $TEMP_DIR >/dev/null 2>&1 ; echo -e '\n' ;exit" INT QUIT TERM EXIT
 mkdir -p $TEMP_DIR
 
-# --- 完整的交互语言包 (100% 还原) ---
+# --- 完整的交互语言包 (确保交互信息丰富) ---
 C[2]="必须以 root 方式运行脚本"
 C[3]="不支持的架构: $(uname -m)"
 C[5]="本脚本只支持 Linux 系统"
@@ -32,7 +32,7 @@ C[38]="请选择: "
 C[39]="API URL:"
 C[40]="API KEY:"
 C[51]="启动 NodePass 服务..."
-C[78]="检测到本机 IP 地址:"
+C[78]="检测到本机 IP 地址如下:"
 C[79]="请选择编号，或直接输入域名/IP:"
 C[85]="获取机器 IP 地址中..."
 C[90]="NodePass URI:"
@@ -45,13 +45,12 @@ hint() { echo -e "\033[33m\033[01m$*\033[0m"; }
 reading() { read -rp "$(info "$1")" "$2"; }
 text() { eval echo "\"\${C[$*]}\""; }
 
-# --- 核心修复：针对你的日志格式精准提取 32 位 Key ---
+# --- 核心：根据你 journalctl -f 的日志精准提取 ---
 get_api_key() {
     GLOBAL_KEY=""
-    # 轮询 10 秒，确保日志已经同步到 journal
+    # 针对日志: API Key created: b1c1ae63870c7c8d8bfed47f4fd0766c
+    # 增加到 10 次循环，确保刚启动时日志能写进去
     for i in {1..10}; do
-        # 针对日志: API Key created: b1c1ae63870c7c8d8bfed47f4fd0766c
-        # 先用 sed 去掉彩色乱码，再用 grep 提取 32 位哈希
         GLOBAL_KEY=$(journalctl -u nodepass --no-pager -n 100 2>/dev/null | \
                      sed 's/\x1b\[[0-9;]*m//g' | \
                      grep "API Key created" | \
@@ -65,20 +64,21 @@ get_api_key() {
     return 1
 }
 
-# --- 核心修复：显示完整信息（含二维码拼接 Key） ---
+# --- 核心：显示详细配置信息 (含带 Key 的二维码) ---
 display_full_info() {
     [ -s "$WORK_DIR/data" ] && source "$WORK_DIR/data"
     
-    info "正在提取 API KEY..."
+    # 1. 强制先获取 KEY
     get_api_key
     
+    # 2. 格式化输出
     [[ "$SERVER_IP" =~ ':' ]] && IP_F="[$SERVER_IP]" || IP_F="$SERVER_IP"
     [ "$TLS_MODE" = 0 ] || [ -z "$TLS_MODE" ] && PROTO="http" || PROTO="https"
     API_URL="$PROTO://$IP_F:$PORT/${PREFIX%/}/v1"
     
-    # 关键：拼接 URI 协议
+    # 3. 构造带 Key 的协议 URI
     if [ -n "$GLOBAL_KEY" ]; then
-        # 协议格式：np://master?url=[BASE64]&key=[KEY]
+        # 协议格式：np://master?url=[BASE64_URL]&key=[KEY]
         URI="np://master?url=$(echo -n "$API_URL" | base64 -w0)&key=$GLOBAL_KEY"
     else
         URI="np://master?url=$(echo -n "$API_URL" | base64 -w0)"
@@ -90,7 +90,7 @@ display_full_info() {
     if [ -n "$GLOBAL_KEY" ]; then
         info "$(text 40) $GLOBAL_KEY"
     else
-        warning "$(text 40) 获取超时，请尝试按 3 刷新或执行 np -s"
+        warning "$(text 40) 提取失败，请检查 [ journalctl -u nodepass ] 确认是否有 KEY 产生"
     fi
     info "$(text 90) $URI"
     [ -x "$WORK_DIR/qrencode" ] && "$WORK_DIR/qrencode" "$URI"
@@ -108,7 +108,7 @@ install() {
   pkill -9 nodepass 2>/dev/null
   ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
   
-  info "正在准备环境并下载文件..."
+  info "正在下载程序文件..."
   curl -fsSL -o "$TEMP_DIR/nodepass.tar.gz" "https://github.com/Kook-9527/VPS_Plugin/raw/refs/heads/main/nodepass/nodepass_1.14.3_linux_$ARCH.tar.gz"
   tar -xzf "$TEMP_DIR/nodepass.tar.gz" -C "$TEMP_DIR"
   curl -fsSL -o "$TEMP_DIR/qrencode" "https://github.com/fscarmen/client_template/raw/main/qrencode-go/qrencode-go-linux-$ARCH"
@@ -124,7 +124,7 @@ install() {
     case "$choice" in 2) SERVER_IP="$IPV6" ;; 3) SERVER_IP="127.0.0.1" ;; *) SERVER_IP="$IPV4" ;; esac
   else
     SERVER_IP="${IPV4}${IPV6}"
-    reading "确认 IP 地址: $SERVER_IP (回车确认): " input
+    reading "确认 IP 地址: $SERVER_IP (直接回车确认): " input
     [ -n "$input" ] && SERVER_IP="$input"
   fi
 
@@ -149,9 +149,10 @@ PORT='$PORT'
 PREFIX='$PREFIX'
 TLS_MODE='$TLS_MODE'" > "$WORK_DIR/data"
 
+  # 写入服务
   cat > /etc/systemd/system/nodepass.service <<EOF
 [Unit]
-Description=NodePass
+Description=NodePass Service
 After=network.target
 [Service]
 ExecStart=$WORK_DIR/nodepass "master://:$PORT/$PREFIX?tls=$TLS_MODE"
@@ -161,7 +162,7 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload && systemctl enable --now nodepass >/dev/null 2>&1
 
-  # 快捷启动
+  # 写入全局命令
   echo -e "#!/bin/bash\nbash <(curl -fsSL https://raw.githubusercontent.com/Kook-9527/VPS_Plugin/main/nodepass/np.sh) \"\$@\"" > /usr/bin/np
   chmod +x /usr/bin/np
 
@@ -187,11 +188,11 @@ menu() {
     [ -s "$WORK_DIR/data" ] && source "$WORK_DIR/data"
     hint " 基础 API: http://$SERVER_IP:$PORT/$PREFIX/v1"
     echo "------------------------"
-    hint "1. 开关服务\n2. 卸载\n3. 查看详细信息(含二维码Key)\n0. 退出"
+    hint "1. 开关服务\n2. 卸载 NodePass\n3. 查看详细信息(二维码含Key)\n0. 退出"
     reading "$(text 38)" choice
     case "$choice" in
       1) pgrep -f nodepass >/dev/null && systemctl stop nodepass || systemctl start nodepass; menu ;;
-      2) systemctl stop nodepass; rm -rf "$WORK_DIR" /usr/bin/np /etc/systemd/system/nodepass.service; info "$(text 11)"; exit ;;
+      2) systemctl stop nodepass; rm -rf "$WORK_DIR" /usr/bin/np /etc/systemd/system/nodepass.service; systemctl daemon-reload; info "$(text 11)"; exit ;;
       3) display_full_info ;;
       0) exit ;;
       *) menu ;;
@@ -205,7 +206,7 @@ menu() {
   fi
 }
 
-# --- 入口控制 ---
+# --- 脚本入口 ---
 [ "$(id -u)" != 0 ] && error "$(text 2)"
 case "$1" in
   -s) display_full_info ;;
