@@ -260,7 +260,7 @@ modify_params() {
     read -rp "2. 流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input
     DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
     
-    read -rp "3. 检测时间窗口：秒  [当前: $WINDOW_DURATION]: " input
+    read -rp "3. 检测时间窗口：秒 [当前: $WINDOW_DURATION]: " input
     WINDOW_DURATION=${input:-$WINDOW_DURATION}
 
     read -rp "4. 窗口内触发次数 [当前: $TRIGGER_COUNT]: " input
