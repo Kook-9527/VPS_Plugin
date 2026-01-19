@@ -140,7 +140,7 @@ block_port() {
     
     echo "\$(date '+%F %T') ⚠️ 密度检测报警 (近 \$WINDOW_DURATION 秒内有 \$total_bad 次异常)"
     echo "   ↳ 🚫 已执行防御：阻断端口 \$TARGET_PORT"
-    send_tg "⚠️ 警告：检测到持续攻击 (密度 \$total_bad/\$WINDOW_DURATION)，已阻断端口 \$TARGET_PORT"
+    send_tg "⚠️ 警告：检测到持续攻击，已阻断端口 \$TARGET_PORT"
     port_blocked=true
     block_start_time=\$(date +%s)
     # 清空历史，避免刚解封又触发
