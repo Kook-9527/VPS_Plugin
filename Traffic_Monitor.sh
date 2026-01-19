@@ -84,144 +84,100 @@ export LANG=C
 export LC_ALL=C
 
 CONFIG_FILE="$CONFIG_FILE"
-if [ -f "\$CONFIG_FILE" ]; then
-    source "\$CONFIG_FILE"
-fi
+if [ -f "\$CONFIG_FILE" ]; then source "\$CONFIG_FILE"; fi
 
-# 关键变量
 TARGET_PORT=\$BLOCK_PORT
-DIFF_THRESHOLD=$DIFF_THRESHOLD
-BLOCK_DURATION=$BLOCK_DURATION
-WINDOW_DURATION=$WINDOW_DURATION
-TRIGGER_COUNT=$TRIGGER_COUNT
-INTERFACE="$NET_INTERFACE"
-
-# 检查网卡
-if [ -z "\$INTERFACE" ] || [ ! -d "/sys/class/net/\$INTERFACE" ]; then
-    echo "❌ 错误：找不到网卡 \$INTERFACE"
-    exit 1
-fi
+INTERFACE="\$NET_INTERFACE"
 
 send_tg() {
     [ "\$TG_ENABLE" != "已开启" ] && return
     local status_msg="\$1"
     local time_now=\$(date '+%Y-%m-%d %H:%M:%S')
     local text="🛡️ 名称：\$SERVER_NAME%0A\$status_msg%0A⏰ 时间：\$time_now"
-    
-    curl -s -X POST "https://api.telegram.org/bot\$TG_TOKEN/sendMessage" \\
-        -d "chat_id=\$TG_CHATID" \\
-        -d "text=\$text" > /dev/null
+    curl -s -X POST "https://api.telegram.org/bot\$TG_TOKEN/sendMessage" -d "chat_id=\$TG_CHATID" -d "text=\$text" > /dev/null
 }
-
-port_blocked=false
-block_start_time=0
-
-# 初始化滑动窗口数组
-history_window=()
 
 clean_rules() {
     for proto in iptables ip6tables; do
         while true; do
-            num=\$([ "\$proto" = "iptables" ] && iptables -L INPUT --line-numbers -n | grep "tcp dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1 || ip6tables -L INPUT --line-numbers -n | grep "tcp dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1)
+            num=\$([ "\$proto" = "iptables" ] && iptables -L INPUT --line-numbers -n | grep "dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1 || ip6tables -L INPUT --line-numbers -n | grep "dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1)
             [ -z "\$num" ] && break
-            if [ "\$proto" = "iptables" ]; then
-                iptables -D INPUT \$num
-            else
-                ip6tables -D INPUT \$num
-            fi
+            \$proto -D INPUT \$num
         done
     done
-}
-
-block_port() {
-    clean_rules
-    iptables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
-    ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
-    
-    echo "\$(date '+%F %T') ⚠️ 密度检测报警 (近 \$WINDOW_DURATION 秒内有 \$total_bad 次异常)"
-    echo "   ↳ 🚫 已执行防御：阻断端口 \$TARGET_PORT"
-    send_tg "⚠️ 警告：检测到持续攻击，已阻断端口 \$TARGET_PORT"
-    port_blocked=true
-    block_start_time=\$(date +%s)
-    # 清空历史，避免刚解封又触发
-    history_window=()
-}
-
-unblock_port() {
-    clean_rules
-    echo "\$(date '+%F %T') ✅ 阻断期结束，解除端口 \$TARGET_PORT 限制"
-    send_tg "✅ 恢复：端口 \$TARGET_PORT 已解封"
-    port_blocked=false
-    block_start_time=0
-    history_window=()
 }
 
 get_bytes() {
     awk -v iface="\$INTERFACE" '\$1 ~ iface":" {print \$2, \$10}' /proc/net/dev | sed 's/:/ /g'
 }
 
+port_blocked=false
+block_start_time=0
+history_window=()
+
 while true; do
+    # --- 无论是否阻断，每秒都抓取流量 ---
+    read rx1 tx1 <<< \$(get_bytes)
+    sleep 1
+    read rx2 tx2 <<< \$(get_bytes)
+
+    stats=\$(awk -v r1=\$rx1 -v r2=\$rx2 -v t1=\$tx1 -v t2=\$tx2 'BEGIN {
+        rx_speed = (r2 - r1) * 8 / 1024 / 1024;
+        tx_speed = (t2 - t1) * 8 / 1024 / 1024;
+        diff = rx_speed - tx_speed;
+        if (diff < 0) diff = -diff;
+        printf "%.2f %.2f %.2f", rx_speed, tx_speed, diff
+    }')
+    read rx_mbps tx_mbps diff_mbps <<< "\$stats"
+    is_bad=\$(awk -v diff="\$diff_mbps" -v thresh="\$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
+
+    # 更新滑动窗口
+    history_window+=(\$is_bad)
+    [ \${#history_window[@]} -gt \$WINDOW_DURATION ] && history_window=("\${history_window[@]:1}")
+    total_bad=0
+    for val in "\${history_window[@]}"; do total_bad=\$((total_bad + val)); done
+
     if ! \$port_blocked; then
-        read rx1 tx1 <<< \$(get_bytes)
-        sleep 1
-        read rx2 tx2 <<< \$(get_bytes)
-
-        # 1. 计算当前这一秒的状态
-        stats=\$(awk -v r1=\$rx1 -v r2=\$rx2 -v t1=\$tx1 -v t2=\$tx2 'BEGIN {
-            rx_speed = (r2 - r1) * 8 / 1024 / 1024;
-            tx_speed = (t2 - t1) * 8 / 1024 / 1024;
-            diff = rx_speed - tx_speed;
-            if (diff < 0) diff = -diff;
-            printf "%.2f %.2f %.2f", rx_speed, tx_speed, diff
-        }')
-        
-        read rx_mbps tx_mbps diff_mbps <<< "\$stats"
-
-        # 判断这一秒是否“坏” (超过阈值)
-        is_bad=\$(awk -v diff="\$diff_mbps" -v thresh="\$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
-        
-        # 2. 加入滑动窗口 (记录历史)
-        history_window+=(\$is_bad)
-        
-        # 3. 保持窗口大小不超过设定值 (比如60)
-        if [ \${#history_window[@]} -gt \$WINDOW_DURATION ]; then
-            # 删除数组第一个元素 (最早的记录)
-            history_window=("\${history_window[@]:1}")
-        fi
-        
-        # 4. 统计窗口内的坏秒数
-        total_bad=0
-        for val in "\${history_window[@]}"; do
-            total_bad=\$((total_bad + val))
-        done
-
-        # 显示状态
-        if [ "\$is_bad" -eq 1 ]; then
-            bad_mark="[⚠️ 异常]"
-        else
-            bad_mark="[OK]"
-        fi
-        echo "\$(date '+%F %T') \$bad_mark 差值:\${diff_mbps}Mbps | 密度: \${total_bad}/\${WINDOW_DURATION}"
-
-        # 5. 触发判断
+        # --- 正常监控状态 ---
+        echo "\$(date '+%H:%M:%S') [OK] 差值:\${diff_mbps}M | 密度:\${total_bad}/\${WINDOW_DURATION}"
         if [ "\$total_bad" -ge "\$TRIGGER_COUNT" ]; then
-            block_port
+            clean_rules
+            iptables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
+            iptables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
+            ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
+            ip6tables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
+            echo "\$(date '+%F %T') ⚠️ 触发防御：阻断端口 \$TARGET_PORT"
+            send_tg "⚠️ 警告：检测到持续攻击，已阻断端口 \$TARGET_PORT"
+            port_blocked=true
+            block_start_time=\$(date +%s)
         fi
     else
-        # 阻断中...
+        # --- 阻断状态 (核心：动态续期逻辑) ---
         now=\$(date +%s)
         elapsed=\$((now - block_start_time))
-        if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
-            unblock_port
+        remaining=\$((BLOCK_DURATION - elapsed))
+
+        if [ "\$is_bad" -eq 1 ]; then
+            # 如果阻断期内依然检测到流量异常，重置计时器
+            block_start_time=\$now
+            echo "\$(date '+%H:%M:%S') [⚡ 续期] 攻击持续中，阻断时间重置为 \$BLOCK_DURATION 秒"
         else
-            echo "\$(date '+%F %T') ⏳ 防御生效中，剩余 \$((BLOCK_DURATION - elapsed)) 秒"
-            sleep 5
+            echo "\$(date '+%H:%M:%S') [🛡️ 防御] 剩余:\${remaining}s | 当前差值:\${diff_mbps}M"
+        fi
+
+        if [ "\$remaining" -le 0 ]; then
+            clean_rules
+            echo "\$(date '+%F %T') ✅ 攻击停止，解除阻断"
+            send_tg "✅ 恢复：攻击停止，端口 \$TARGET_PORT 已解封"
+            port_blocked=false
+            history_window=() # 清空窗口防止误触发
         fi
     fi
 done
 EOF
     chmod +x "$SCRIPT_PATH"
 }
+
 
 # ============================================
 # TG 设置
