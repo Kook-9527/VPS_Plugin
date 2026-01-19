@@ -223,7 +223,7 @@ menu() {
     fi
 
     echo "------------------------"
-    hint "1. 开关服务\n2. 卸载 NodePass\n3. 查看完整连接URI（可复制到客户端）\n0. 退出"
+    hint "1. 开关服务\n2. 卸载 NodePass\n3. 查看完整连接URI\n0. 退出"
     reading "$(text 38)" choice
     case "$choice" in
       1) pgrep -f nodepass >/dev/null && systemctl stop nodepass || systemctl start nodepass; sleep 8; menu ;;
