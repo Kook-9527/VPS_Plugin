@@ -324,6 +324,7 @@ while true; do
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
     echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps"
     echo "阻断逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
+    echo "延时逻辑：阻断期内若检测到异常，自动重置${BLOCK_DURATION}秒"
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
