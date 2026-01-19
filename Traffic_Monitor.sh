@@ -16,8 +16,8 @@ set -e
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
 DIFF_THRESHOLD=2                   # 流量差值阈值 (Mbps)
 BLOCK_DURATION=250                 # 阻断时间 (秒)
-WINDOW_DURATION=45                 # 检测时间窗口 (秒)
-TRIGGER_COUNT=15                   # 窗口内触发次数阈值
+WINDOW_DURATION=30                 # 检测时间窗口 (秒)
+TRIGGER_COUNT=10                   # 窗口内触发次数阈值
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
