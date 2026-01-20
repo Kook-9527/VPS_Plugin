@@ -53,7 +53,7 @@ send_tg() {
         local msg="$1"
         local time_now=$(date '+%Y-%m-%d %H:%M:%S')
         # 针对 TG API 的特殊字符处理
-        local text="🛡️ **流量配额通知**%0A--------------------------------------------------%0A📌 服务器：$SERVER_NAME%0A📢 消息：$msg%0A⏰ 时间：$time_now"
+        local text="🛡️ **流量配额通知**%0A-----------------------------------------%0A📌 服务器：$SERVER_NAME%0A📢 消息：$msg%0A⏰ 时间：$time_now"
         curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
              -d "chat_id=$TG_CHATID" \
              -d "parse_mode=Markdown" \
