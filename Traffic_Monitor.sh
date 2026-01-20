@@ -184,7 +184,7 @@ while true; do
             ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
             ip6tables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
             
-            send_tg "⚠️ 发现异常背景攻击(已排除\$TARGET_PORT端口流量)，阻断端口 \$TARGET_PORT"
+            send_tg "⚠️ 检测到持续攻击，已阻断端口 \$TARGET_PORT"
             port_blocked=true
             block_start_time=\$(date +%s)
         fi
