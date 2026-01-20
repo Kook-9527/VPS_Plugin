@@ -267,7 +267,7 @@ remove_monitor() {
 }
 
 # ============================================
-# 主界面 (完全还原你的风格)
+# 主界面
 # ============================================
 while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
