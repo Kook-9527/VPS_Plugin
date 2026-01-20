@@ -89,16 +89,27 @@ if [ -f "\$CONFIG_FILE" ]; then source "\$CONFIG_FILE"; fi
 TARGET_PORT=\$BLOCK_PORT
 INTERFACE="\$NET_INTERFACE"
 
-# --- 业务流量隔离统计 ---
+# --- 业务流量隔离统计核心修正 ---
 setup_stats() {
-    iptables -N TRAFFIC_IN 2>/dev/null || true
-    iptables -N TRAFFIC_OUT 2>/dev/null || true
-    iptables -I TRAFFIC_IN -p tcp --dport \$TARGET_PORT -j RETURN 2>/dev/null || true
-    iptables -I TRAFFIC_IN -p udp --dport \$TARGET_PORT -j RETURN 2>/dev/null || true
-    iptables -I TRAFFIC_OUT -p tcp --sport \$TARGET_PORT -j RETURN 2>/dev/null || true
-    iptables -I TRAFFIC_OUT -p udp --sport \$TARGET_PORT -j RETURN 2>/dev/null || true
-    iptables -C INPUT -j TRAFFIC_IN 2>/dev/null || iptables -I INPUT -j TRAFFIC_IN
-    iptables -C OUTPUT -j TRAFFIC_OUT 2>/dev/null || iptables -I OUTPUT -j TRAFFIC_OUT
+    # 强制清理旧链，确保规则位于第一行
+    iptables -D INPUT -j TRAFFIC_IN 2>/dev/null || true
+    iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
+    iptables -F TRAFFIC_IN 2>/dev/null || true
+    iptables -F TRAFFIC_OUT 2>/dev/null || true
+    iptables -X TRAFFIC_IN 2>/dev/null || true
+    iptables -X TRAFFIC_OUT 2>/dev/null || true
+
+    iptables -N TRAFFIC_IN
+    iptables -N TRAFFIC_OUT
+    # 统计 55555 端口的所有 TCP/UDP 进出流量
+    iptables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT -j RETURN
+    iptables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT -j RETURN
+    iptables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT -j RETURN
+    iptables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT -j RETURN
+
+    # 挂载到 INPUT/OUTPUT 链的最顶端 (-I)
+    iptables -I INPUT 1 -j TRAFFIC_IN
+    iptables -I OUTPUT 1 -j TRAFFIC_OUT
 }
 
 send_tg() {
@@ -112,7 +123,7 @@ send_tg() {
 clean_rules() {
     for proto in iptables ip6tables; do
         while true; do
-            num=\$([ "\$proto" = "iptables" ] && iptables -L INPUT --line-numbers -n | grep "dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1 || ip6tables -L INPUT --line-numbers -n | grep "dpt:\$TARGET_PORT" | grep "DROP" | awk '{print \$1}' | head -n1)
+            num=\$([ "\$proto" = "iptables" ] && iptables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1 || ip6tables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
             [ -z "\$num" ] && break
             \$proto -D INPUT \$num
         done
@@ -120,12 +131,23 @@ clean_rules() {
 }
 
 get_pure_bytes() {
+    # 获取网卡总流量
     local total=\$(awk -v iface="\$INTERFACE" '\$1 ~ iface":" {print \$2, \$10}' /proc/net/dev | sed 's/:/ /g')
+    # 获取业务端口(55555)的统计值 (通过 iptables -x 获得精确字节数)
     local p_in=\$(iptables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
     local p_out=\$(iptables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    
     read t_in t_out <<< "\$total"
-    # 核心逻辑：总流量扣除业务流量，得到纯背景流量
-    echo "\$((t_in - p_in)) \$((t_out - p_out))"
+    
+    # 核心：计算扣除业务流量后的“纯背景”数据
+    local pure_in=\$((t_in - p_in))
+    local pure_out=\$((t_out - p_out))
+    
+    # 防止出现负数
+    [ \$pure_in -lt 0 ] && pure_in=0
+    [ \$pure_out -lt 0 ] && pure_out=0
+    
+    echo "\$pure_in \$pure_out"
 }
 
 setup_stats
@@ -156,12 +178,13 @@ while true; do
     if ! \$port_blocked; then
         echo "\$(date '+%H:%M:%S') [监控] 背景下载:\${rx_mbps}M | 差值:\${diff_mbps}M | 密度:\${total_bad}/\${WINDOW_DURATION}"
         if [ "\$total_bad" -ge "\$TRIGGER_COUNT" ]; then
-            clean_rules
+            # 阻断端口
             iptables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
             iptables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
             ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
             ip6tables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
-            send_tg "⚠️ 发现异常背景攻击(已排除55555端口流量)，阻断端口 \$TARGET_PORT"
+            
+            send_tg "⚠️ 发现异常背景攻击(已排除\$TARGET_PORT端口流量)，阻断端口 \$TARGET_PORT"
             port_blocked=true
             block_start_time=\$(date +%s)
         fi
@@ -172,6 +195,8 @@ while true; do
         if [ "\$is_bad" -eq 1 ]; then
             block_start_time=\$now
             echo "\$(date '+%H:%M:%S') [⚡ 续期] 背景异常持续中"
+        else
+            echo "\$(date '+%H:%M:%S') [🛡️ 防御] 剩余:\${remaining}s | 背景差值:\${diff_mbps}M"
         fi
         if [ "\$remaining" -le 0 ]; then
             clean_rules
@@ -185,9 +210,9 @@ EOF
     chmod +x "$SCRIPT_PATH"
 }
 
-# ============================================
-# 菜单与配置函数 (保持原样)
-# ============================================
+# =========================
+# 菜单与配置函数
+# =========================
 setup_tg() {
     echo "--- TG 通知配置 ---"
     read -rp "是否开启 TG 通知? [Y/n]: " choice; choice=${choice:-y}
@@ -222,6 +247,9 @@ modify_params() {
 install_monitor() {
     echo "📥 安装中..."
     install_dependencies
+    read -rp "请输入受到攻击时要阻断的端口 [默认 $BLOCK_PORT]: " USER_PORT
+    BLOCK_PORT="${USER_PORT:-$BLOCK_PORT}"
+    setup_tg
     create_monitor_script
     cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
@@ -245,10 +273,9 @@ remove_monitor() {
     iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
     iptables -F TRAFFIC_IN 2>/dev/null || true; iptables -X TRAFFIC_IN 2>/dev/null || true
     iptables -F TRAFFIC_OUT 2>/dev/null || true; iptables -X TRAFFIC_OUT 2>/dev/null || true
-    # 解封端口
     for proto in iptables ip6tables; do
         while true; do
-            num=$($proto -L INPUT --line-numbers -n | grep "dpt:$BLOCK_PORT" | awk '{print $1}' | head -n1)
+            num=$($proto -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:$BLOCK_PORT" | awk '{print $1}' | head -n1)
             [ -z "$num" ] && break
             $proto -D INPUT $num
         done
@@ -258,13 +285,13 @@ remove_monitor() {
 }
 
 # ============================================
-# 主界面 (完全还原你的风格)
+# 主界面
 # ============================================
 while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "============================="
-    echo " 智能流量密度监控 v1"
+    echo " 智能流量密度监控 v1.1"
     echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
