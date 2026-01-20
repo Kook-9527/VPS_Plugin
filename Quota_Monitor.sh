@@ -5,7 +5,7 @@
 # ============================================
 
 CONFIG_FILE="/etc/quota_monitor.conf"
-SCRIPT_PATH="/root/quota_manager.sh"
+SCRIPT_PATH=$(readlink -f "$0")
 SERVICE_NAME="quota-monitor.service"
 
 # --- 默认参数 ---
