@@ -62,16 +62,23 @@ send_tg() {
 }
 
 get_total_mb() {
-    # 使用 --oneline 模式并取第 11 个字段（这是以 KiB 为单位的纯数字）
-    local total_kib=$(vnstat -i "$NET_INTERFACE" --oneline | cut -d';' -f11)
+    # 使用 json 格式获取总字节数，并转换为 MiB (除以 1024 再除以 1024)
+    # 逻辑：(rx + tx) / 1024 / 1024
+    local total_mib=$(vnstat -i "$NET_INTERFACE" --json | jq '.interfaces[0].traffic.total.rx + .interfaces[0].traffic.total.tx' | awk '{printf "%.0f", $1/1024/1024}')
     
-    # 确保只返回数字，如果为空则返回 0
-    if [[ ! "$total_kib" =~ ^[0-9]+$ ]]; then
-        echo "0"
-    else
-        # 转换为 MiB 以匹配脚本原有的计算逻辑
-        echo $((total_kib / 1024))
+    # 如果没有 jq 或者获取失败，使用备用解析方案
+    if [[ -z "$total_mib" || "$total_mib" == "0" ]]; then
+        # 兜底方案：从 oneline 中提取，并去掉 GiB 等单位
+        local raw_total=$(vnstat -i "$NET_INTERFACE" --oneline | cut -d';' -f6)
+        # 将 "7.85 GiB" 转换为 MiB 数字
+        total_mib=$(echo "$raw_total" | awk '{
+            if($2=="GiB") print $1*1024;
+            else if($2=="MiB") print $1;
+            else if($2=="TiB") print $1*1024*1024;
+            else print $1/1024
+        }' | cut -d. -f1)
     fi
+    echo "${total_mib:-0}"
 }
 # --- 后台逻辑 ---
 run_monitor() {
@@ -159,7 +166,7 @@ case "$1" in
 
             case "$choice" in
                 1)
-                    apt update && apt install -y jq &&  apt install -y vnstat bc curl
+                    apt update && apt install -y jq vnstat bc curl
                     systemctl enable --now vnstat
                     vnstat -i "$NET_INTERFACE" --add >/dev/null 2>&1
                     BASE_MB=$(get_total_mb)
