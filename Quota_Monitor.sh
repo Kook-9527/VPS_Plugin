@@ -62,12 +62,17 @@ send_tg() {
 }
 
 get_total_mb() {
-    # 强制获取以 KiB 为单位的总流量 (第11个字段)
+    # 使用 --oneline 模式并取第 11 个字段（这是以 KiB 为单位的纯数字）
     local total_kib=$(vnstat -i "$NET_INTERFACE" --oneline | cut -d';' -f11)
-    # 转换为 MiB 返回给脚本逻辑
-    echo $((total_kib / 1024))
+    
+    # 确保只返回数字，如果为空则返回 0
+    if [[ ! "$total_kib" =~ ^[0-9]+$ ]]; then
+        echo "0"
+    else
+        # 转换为 MiB 以匹配脚本原有的计算逻辑
+        echo $((total_kib / 1024))
+    fi
 }
-
 # --- 后台逻辑 ---
 run_monitor() {
     echo "[$(date '+%T')] 监控服务已启动..."
