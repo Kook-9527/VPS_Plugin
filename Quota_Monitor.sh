@@ -63,6 +63,28 @@ install_deps() {
     vnstat -u -i "$NET_INTERFACE"
 }
 
+# --- TG设置函数 (被选项1和2共同调用) ---
+setup_tg() {
+    echo "--- TG 通知配置 ---"
+    read -rp "是否开启/配置 TG 通知? [Y/n]: " tg_choice
+    tg_choice=${tg_choice:-y} # 默认回车为y
+    if [[ "$tg_choice" == [yY] ]]; then
+        read -rp "请输入服务器备注名称: " SERVER_NAME
+        read -rp "请输入TG机器人Token: " TG_TOKEN
+        read -rp "请输入TG账号ID: " TG_CHATID
+        TG_ENABLE="已开启"
+        echo "✅ TG 配置已记录。"
+    else
+        TG_ENABLE="已关闭"
+        echo "ℹ️ 已跳过 TG 配置。"
+    fi
+    save_config
+    # 如果服务正在运行，则重启以应用新TG配置
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        systemctl restart "$SERVICE_NAME"
+    fi
+}
+
 send_tg() {
     [ "$TG_ENABLE" != "已开启" ] && return
     local msg="$1"
@@ -72,7 +94,6 @@ send_tg() {
 }
 
 get_total_bytes() {
-    # 强制重新扫描一次，确保 vnstat 获取最新数据
     vnstat -i "$NET_INTERFACE" > /dev/null 2>&1
     local data=$(vnstat -i "$NET_INTERFACE" --json)
     local rx=$(echo "$data" | grep -m 1 '"rx":' | awk '{print $2}' | tr -d ',')
@@ -89,7 +110,6 @@ run_monitor() {
         NOW_DAY=$(date +%d)
         NOW_HMS=$(date +%H:%M:%S)
         
-        # 1. 自动重置逻辑 (每月 8 号 22:00:14)
         if [ "$NOW_DAY" == "$CYCLE_DAY" ] && [[ "$NOW_HMS" > "$CYCLE_TIME" ]]; then
             if [ "$LAST_RESET_MONTH" != "$NOW_MONTH" ]; then
                 BASE_BYTES=$CURRENT_TOTAL
@@ -103,12 +123,10 @@ run_monitor() {
             fi
         fi
 
-        # 2. 流量统计计算
         USED_BYTES=$((CURRENT_TOTAL - BASE_BYTES))
         [ $USED_BYTES -lt 0 ] && USED_BYTES=0
         USED_GB=$(echo "scale=4; $USED_BYTES / 1024 / 1024 / 1024" | bc)
         
-        # 3. 封禁逻辑
         if (( $(echo "$USED_GB >= $QUOTA_GB" | bc -l) )); then
             if [ "$HAS_BLOCKED" = false ]; then
                 iptables -I INPUT -p tcp --dport "$BLOCK_PORT" -j DROP
@@ -128,21 +146,23 @@ while true; do
     load_config
     clear
     echo "============================="
-    echo " 流量配额精确监控 v1.3"
+    echo " 流量配额精确监控 v1.0"
     echo " 周期：每月 $CYCLE_DAY 日 $CYCLE_TIME 重置"
     echo "============================="
     
-    # 状态与流量数据预处理
     CUR_T=$(get_total_bytes)
     U_B=$((CUR_T - BASE_BYTES))
     [ $U_B -lt 0 ] && U_B=0
     U_GB=$(echo "scale=2; $U_B / 1024 / 1024 / 1024" | bc)
     ST_RUN=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "运行中" || echo "未启动")
 
+    # --- 排版显示 ---
     echo " 脚本状态：$ST_RUN 丨 TG通知：$TG_ENABLE"
     echo " 监控网卡：$NET_INTERFACE 丨 限制端口：$BLOCK_PORT"
     echo " 流量配额：$U_GB GB / $QUOTA_GB GB "
     echo " 端口状态：$(iptables -L INPUT -n | grep -q "dpt:$BLOCK_PORT" && echo -e "\033[31m[已封禁]\033[0m" || echo -e "\033[32m[正常]\033[0m")"
+    # -----------------------
+
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
@@ -174,21 +194,13 @@ WantedBy=multi-user.target
 EOF
             systemctl daemon-reload
             systemctl enable --now $SERVICE_NAME
-            echo "✅ 安装成功并已启动后台监控！"
+            echo "✅ 核心服务安装成功！"
+            echo "-----------------------------"
+            setup_tg  # 安装完后自动调用选项2的逻辑
+            echo "✅ 监控已全面启动。"
             ;;
         2)
-            echo "--- TG 通知配置 ---"
-            read -rp "是否开启 TG 通知? [Y/n]: " tg_choice
-            if [[ "$tg_choice" == [yY] ]]; then
-                read -rp "服务器备注: " SERVER_NAME
-                read -rp "TG机器人Token: " TG_TOKEN
-                read -rp "TG账号ID: " TG_CHATID
-                TG_ENABLE="已开启"
-            else
-                TG_ENABLE="已关闭"
-            fi
-            save_config
-            systemctl restart $SERVICE_NAME 2>/dev/null
+            setup_tg
             ;;
         3)
             echo "--- 修改参数 (回车保持当前) ---"
