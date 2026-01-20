@@ -131,7 +131,7 @@ install() {
   ARCH=$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
   
   info "正在下载程序文件..."
-  curl -fsSL -o "$TEMP_DIR/nodepass.tar.gz" "https://github.com/Kook-9527/VPS_Plugin/raw/refs/heads/main/nodepass/nodepass_1.14.3_linux_$ARCH.tar.gz"
+  curl -fsSL -o "$TEMP_DIR/nodepass.tar.gz" "https://github.com/Kook-9527/VPS_Plugin/raw/refs/heads/main/nodepass/1.14.3/nodepass_1.14.3_linux_$ARCH.tar.gz"
   tar -xzf "$TEMP_DIR/nodepass.tar.gz" -C "$TEMP_DIR"
 
   # 已移除 qrencode 下载（不再需要二维码）
