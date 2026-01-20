@@ -62,12 +62,10 @@ send_tg() {
 }
 
 get_total_mb() {
-    local db_val=$(vnstat --dumpdb -i "$NET_INTERFACE" 2>/dev/null | grep "^$NET_INTERFACE;" | cut -d';' -f3,4 | tr ';' '+')
-    if [[ -z "$db_val" || "$db_val" == "+" ]]; then
-        echo "0"
-    else
-        echo "$((db_val))"
-    fi
+    # 强制获取以 KiB 为单位的总流量 (第11个字段)
+    local total_kib=$(vnstat -i "$NET_INTERFACE" --oneline | cut -d';' -f11)
+    # 转换为 MiB 返回给脚本逻辑
+    echo $((total_kib / 1024))
 }
 
 # --- 后台逻辑 ---
@@ -156,7 +154,7 @@ case "$1" in
 
             case "$choice" in
                 1)
-                    apt update && apt install -y vnstat bc curl
+                    apt update && apt install -y jq &&  apt install -y vnstat bc curl
                     systemctl enable --now vnstat
                     vnstat -i "$NET_INTERFACE" --add >/dev/null 2>&1
                     BASE_MB=$(get_total_mb)
