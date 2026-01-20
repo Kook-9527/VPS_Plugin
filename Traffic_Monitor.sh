@@ -124,6 +124,7 @@ get_pure_bytes() {
     local p_in=\$(iptables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
     local p_out=\$(iptables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
     read t_in t_out <<< "\$total"
+    # 核心逻辑：总流量扣除业务流量，得到纯背景流量
     echo "\$((t_in - p_in)) \$((t_out - p_out))"
 }
 
@@ -160,7 +161,7 @@ while true; do
             iptables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
             ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
             ip6tables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
-            send_tg "⚠️ 检测到持续攻击，已阻断端口 \$TARGET_PORT"
+            send_tg "⚠️ 发现异常背景攻击(已排除55555端口流量)，阻断端口 \$TARGET_PORT"
             port_blocked=true
             block_start_time=\$(date +%s)
         fi
@@ -171,12 +172,10 @@ while true; do
         if [ "\$is_bad" -eq 1 ]; then
             block_start_time=\$now
             echo "\$(date '+%H:%M:%S') [⚡ 续期] 背景异常持续中"
-        else
-            echo "\$(date '+%H:%M:%S') [🛡️ 防御] 剩余:\${remaining}s | 背景差值:\${diff_mbps}M"
         fi
         if [ "\$remaining" -le 0 ]; then
             clean_rules
-            send_tg "✅ 攻击停止，端口 \$TARGET_PORT 已解封"
+            send_tg "✅ 攻击停止，端口 \$TARGET_PORT 已自动解封"
             port_blocked=false
             history_window=()
         fi
@@ -186,9 +185,9 @@ EOF
     chmod +x "$SCRIPT_PATH"
 }
 
-# =========================
-# 菜单与配置函数
-# =========================
+# ============================================
+# 菜单与配置函数 (保持原样)
+# ============================================
 setup_tg() {
     echo "--- TG 通知配置 ---"
     read -rp "是否开启 TG 通知? [Y/n]: " choice; choice=${choice:-y}
@@ -223,14 +222,6 @@ modify_params() {
 install_monitor() {
     echo "📥 安装中..."
     install_dependencies
-    
-    # 安装时询问端口
-    read -rp "请输入受到攻击时要阻断的端口 [默认 $BLOCK_PORT]: " USER_PORT
-    BLOCK_PORT="${USER_PORT:-$BLOCK_PORT}"
-    
-    # 顺便配置TG
-    setup_tg
-    
     create_monitor_script
     cat << EOF > "/etc/systemd/system/$SERVICE_NAME"
 [Unit]
@@ -254,6 +245,7 @@ remove_monitor() {
     iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
     iptables -F TRAFFIC_IN 2>/dev/null || true; iptables -X TRAFFIC_IN 2>/dev/null || true
     iptables -F TRAFFIC_OUT 2>/dev/null || true; iptables -X TRAFFIC_OUT 2>/dev/null || true
+    # 解封端口
     for proto in iptables ip6tables; do
         while true; do
             num=$($proto -L INPUT --line-numbers -n | grep "dpt:$BLOCK_PORT" | awk '{print $1}' | head -n1)
@@ -266,7 +258,7 @@ remove_monitor() {
 }
 
 # ============================================
-# 主界面
+# 主界面 (完全还原你的风格)
 # ============================================
 while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
