@@ -1,10 +1,7 @@
 #!/bin/bash
 
-# ============================================
-# 每月流量配额绝对精确监控脚本
-# ============================================
-
 CONFIG_FILE="/etc/quota_monitor.conf"
+# 自动获取脚本当前的绝对路径，解决 status 203 报错
 SCRIPT_PATH=$(readlink -f "$0")
 SERVICE_NAME="quota-monitor.service"
 
@@ -54,20 +51,17 @@ EOF
 # --- 功能函数 ---
 install_deps() {
     echo "正在检查并安装必要依赖 (vnstat, bc, curl)..."
-    if [ -f /etc/os-release ]; then . /etc/os-release; DISTRO=$ID; fi
-    case "$DISTRO" in
-        ubuntu|debian) apt update && apt install -y vnstat bc curl ;;
-        *) yum install -y vnstat bc curl ;;
-    esac
+    apt update -y || yum check-update
+    apt install -y vnstat bc curl || yum install -y vnstat bc curl
     systemctl enable --now vnstat
-    vnstat -u -i "$NET_INTERFACE"
+    # 兼容性处理：尝试初始化，如果报错则跳过
+    vnstat -i "$NET_INTERFACE" >/dev/null 2>&1
 }
 
-# --- TG设置函数 (被选项1和2共同调用) ---
 setup_tg() {
     echo "--- TG 通知配置 ---"
     read -rp "是否开启/配置 TG 通知? [Y/n]: " tg_choice
-    tg_choice=${tg_choice:-y} # 默认回车为y
+    tg_choice=${tg_choice:-y}
     if [[ "$tg_choice" == [yY] ]]; then
         read -rp "请输入服务器备注名称: " SERVER_NAME
         read -rp "请输入TG机器人Token: " TG_TOKEN
@@ -79,7 +73,6 @@ setup_tg() {
         echo "ℹ️ 已跳过 TG 配置。"
     fi
     save_config
-    # 如果服务正在运行，则重启以应用新TG配置
     if systemctl is-active --quiet "$SERVICE_NAME"; then
         systemctl restart "$SERVICE_NAME"
     fi
@@ -94,14 +87,17 @@ send_tg() {
 }
 
 get_total_bytes() {
-    vnstat -i "$NET_INTERFACE" > /dev/null 2>&1
-    local data=$(vnstat -i "$NET_INTERFACE" --json)
+    # 确保 vnstat 有数据输出
+    local data=$(vnstat -i "$NET_INTERFACE" --json 2>/dev/null)
+    if [ -z "$data" ]; then
+        echo "0"
+        return
+    fi
     local rx=$(echo "$data" | grep -m 1 '"rx":' | awk '{print $2}' | tr -d ',')
     local tx=$(echo "$data" | grep -m 1 '"tx":' | awk '{print $2}' | tr -d ',')
     echo $((rx + tx))
 }
 
-# --- 核心后台逻辑 ---
 run_monitor() {
     while true; do
         load_config
@@ -141,12 +137,11 @@ run_monitor() {
     done
 }
 
-# --- 交互界面 ---
 while true; do
     load_config
     clear
     echo "============================="
-    echo " 流量配额精确监控 v1.0"
+    echo " 流量配额精确监控 v1.5"
     echo " 周期：每月 $CYCLE_DAY 日 $CYCLE_TIME 重置"
     echo "============================="
     
@@ -156,13 +151,10 @@ while true; do
     U_GB=$(echo "scale=2; $U_B / 1024 / 1024 / 1024" | bc)
     ST_RUN=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "运行中" || echo "未启动")
 
-    # --- 排版显示 ---
     echo " 脚本状态：$ST_RUN 丨 TG通知：$TG_ENABLE"
     echo " 监控网卡：$NET_INTERFACE 丨 限制端口：$BLOCK_PORT"
     echo " 流量配额：$U_GB GB / $QUOTA_GB GB "
     echo " 端口状态：$(iptables -L INPUT -n | grep -q "dpt:$BLOCK_PORT" && echo -e "\033[31m[已封禁]\033[0m" || echo -e "\033[32m[正常]\033[0m")"
-    # -----------------------
-
     echo "============================="
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
@@ -195,13 +187,9 @@ EOF
             systemctl daemon-reload
             systemctl enable --now $SERVICE_NAME
             echo "✅ 核心服务安装成功！"
-            echo "-----------------------------"
-            setup_tg  # 安装完后自动调用选项2的逻辑
-            echo "✅ 监控已全面启动。"
-            ;;
-        2)
             setup_tg
             ;;
+        2) setup_tg ;;
         3)
             echo "--- 修改参数 (回车保持当前) ---"
             read -rp "限额端口 [$BLOCK_PORT]: " p; BLOCK_PORT=${p:-$BLOCK_PORT}
@@ -210,19 +198,15 @@ EOF
             read -rp "重置时间 [$CYCLE_TIME]: " t; CYCLE_TIME=${t:-$CYCLE_TIME}
             save_config
             systemctl restart $SERVICE_NAME 2>/dev/null
-            echo "✅ 参数已更新并重启服务"
+            echo "✅ 参数更新成功"
             ;;
-        4)
-            echo "正在查看实时日志 (按 Ctrl+C 退出)..."
-            journalctl -u $SERVICE_NAME -f -n 20
-            ;;
+        4) journalctl -u $SERVICE_NAME -f -n 20 ;;
         5)
-            echo "正在尝试手动解封端口 $BLOCK_PORT..."
             iptables -D INPUT -p tcp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
             iptables -D INPUT -p udp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
             HAS_BLOCKED=false
             save_config
-            echo "✅ 端口已手动解封。"
+            echo "✅ 端口已解封"
             ;;
         6)
             systemctl stop $SERVICE_NAME 2>/dev/null
@@ -230,7 +214,7 @@ EOF
             rm -f /etc/systemd/system/$SERVICE_NAME "$CONFIG_FILE"
             iptables -D INPUT -p tcp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
             iptables -D INPUT -p udp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-            echo "✅ 已清理全部配置和规则"
+            echo "✅ 已卸载"
             ;;
         0) exit 0 ;;
         run) run_monitor ;;
