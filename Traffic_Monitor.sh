@@ -91,7 +91,7 @@ INTERFACE="\$NET_INTERFACE"
 
 # --- 业务流量隔离统计核心修正 ---
 setup_stats() {
-    # 强制清理旧链，确保规则位于第一行
+    # IPv4规则清理
     iptables -D INPUT -j TRAFFIC_IN 2>/dev/null || true
     iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
     iptables -F TRAFFIC_IN 2>/dev/null || true
@@ -99,19 +99,35 @@ setup_stats() {
     iptables -X TRAFFIC_IN 2>/dev/null || true
     iptables -X TRAFFIC_OUT 2>/dev/null || true
 
+    # IPv6规则清理
+    ip6tables -D INPUT -j TRAFFIC_IN 2>/dev/null || true
+    ip6tables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
+    ip6tables -F TRAFFIC_IN 2>/dev/null || true
+    ip6tables -F TRAFFIC_OUT 2>/dev/null || true
+    ip6tables -X TRAFFIC_IN 2>/dev/null || true
+    ip6tables -X TRAFFIC_OUT 2>/dev/null || true
+
+    # 创建IPv4统计链
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
-    
-    # 修复：去掉 -j RETURN，让规则正常计数
     iptables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT
     iptables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT
     iptables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT
     iptables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT
-
-    # 挂载到 INPUT/OUTPUT 链的最顶端 (-I)
     iptables -I INPUT 1 -j TRAFFIC_IN
     iptables -I OUTPUT 1 -j TRAFFIC_OUT
+
+    # 创建IPv6统计链（新增）
+    ip6tables -N TRAFFIC_IN
+    ip6tables -N TRAFFIC_OUT
+    ip6tables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT
+    ip6tables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT
+    ip6tables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT
+    ip6tables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT
+    ip6tables -I INPUT 1 -j TRAFFIC_IN
+    ip6tables -I OUTPUT 1 -j TRAFFIC_OUT
 }
+
 
 
 send_tg() {
@@ -123,27 +139,39 @@ send_tg() {
 }
 
 clean_rules() {
-    for proto in iptables ip6tables; do
-        while true; do
-            num=\$([ "\$proto" = "iptables" ] && iptables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1 || ip6tables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
-            [ -z "\$num" ] && break
-            \$proto -D INPUT \$num
-        done
+    # 清理IPv4阻断规则
+    while true; do
+        num=\$(iptables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
+        [ -z "\$num" ] && break
+        iptables -D INPUT \$num
+    done
+    
+    # 清理IPv6阻断规则
+    while true; do
+        num=\$(ip6tables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
+        [ -z "\$num" ] && break
+        ip6tables -D INPUT \$num
     done
 }
+
 
 get_pure_bytes() {
     # 获取网卡总流量
     local total=\$(awk -v iface="\$INTERFACE" '\$1 ~ iface":" {print \$2, \$10}' /proc/net/dev | sed 's/:/ /g')
-    # 获取业务端口(55555)的统计值 (通过 iptables -x 获得精确字节数)
-    local p_in=\$(iptables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
-    local p_out=\$(iptables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    
+    # 获取IPv4业务端口统计
+    local p4_in=\$(iptables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    local p4_out=\$(iptables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    
+    # 获取IPv6业务端口统计（新增）
+    local p6_in=\$(ip6tables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    local p6_out=\$(ip6tables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
     
     read t_in t_out <<< "\$total"
     
-    # 核心：计算扣除业务流量后的“纯背景”数据
-    local pure_in=\$((t_in - p_in))
-    local pure_out=\$((t_out - p_out))
+    # 核心：扣除IPv4和IPv6的业务流量
+    local pure_in=\$((t_in - p4_in - p6_in))
+    local pure_out=\$((t_out - p4_out - p6_out))
     
     # 防止出现负数
     [ \$pure_in -lt 0 ] && pure_in=0
@@ -151,6 +179,7 @@ get_pure_bytes() {
     
     echo "\$pure_in \$pure_out"
 }
+
 
 setup_stats
 port_blocked=false
