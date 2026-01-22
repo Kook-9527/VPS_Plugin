@@ -322,7 +322,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "============================="
-    echo " 智能流量密度监控 v1.1"
+    echo " 智能流量密度监控 v1.1.1"
     echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
