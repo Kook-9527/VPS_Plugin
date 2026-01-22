@@ -101,16 +101,18 @@ setup_stats() {
 
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
-    # 统计 55555 端口的所有 TCP/UDP 进出流量
-    iptables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT -j RETURN
-    iptables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT -j RETURN
-    iptables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT -j RETURN
-    iptables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT -j RETURN
+    
+    # 修复：去掉 -j RETURN，让规则正常计数
+    iptables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT
+    iptables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT
+    iptables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT
+    iptables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT
 
     # 挂载到 INPUT/OUTPUT 链的最顶端 (-I)
     iptables -I INPUT 1 -j TRAFFIC_IN
     iptables -I OUTPUT 1 -j TRAFFIC_OUT
 }
+
 
 send_tg() {
     [ "\$TG_ENABLE" != "已开启" ] && return
