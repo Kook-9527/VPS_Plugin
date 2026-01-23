@@ -211,7 +211,7 @@ while true; do
     for val in "${history_window[@]}"; do total_bad=$((total_bad + val)); done
 
     if ! $port_blocked; then
-        echo "$(date '+%H:%M:%S') [监控] 背景下载:${rx_mbps}M | 差值:${diff_mbps}M | 密度:${total_bad}/${WINDOW_DURATION}"
+        echo "$(date '+%H:%M:%S') [监控] 背景下载:${rx_mbps}Mbps | 差值:${diff_mbps}M | 密度:${total_bad}/${WINDOW_DURATION}"
         
         if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
             echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
@@ -343,7 +343,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "============================="
-    echo " 智能流量密度监控 v1.0.2"
+    echo " 智能流量密度监控 v1.0.3"
     echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
