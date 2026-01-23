@@ -78,20 +78,19 @@ EOF
 # 生成核心监控脚本
 # ============================================
 create_monitor_script() {
-    cat << EOF > "$SCRIPT_PATH"
+    cat << 'SCRIPT_EOF' > "$SCRIPT_PATH"
 #!/bin/bash
 export LANG=C
 export LC_ALL=C
 
-CONFIG_FILE="$CONFIG_FILE"
-if [ -f "\$CONFIG_FILE" ]; then source "\$CONFIG_FILE"; fi
+CONFIG_FILE="/etc/traffic_monitor_config.sh"
+if [ -f "$CONFIG_FILE" ]; then source "$CONFIG_FILE"; fi
 
-TARGET_PORT=\$BLOCK_PORT
-INTERFACE="\$NET_INTERFACE"
+TARGET_PORT=$BLOCK_PORT
+INTERFACE="$NET_INTERFACE"
 
-# --- 业务流量隔离统计核心修正 ---
 setup_stats() {
-    # IPv4规则清理
+    # IPv4清理
     iptables -D INPUT -j TRAFFIC_IN 2>/dev/null || true
     iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
     iptables -F TRAFFIC_IN 2>/dev/null || true
@@ -99,7 +98,7 @@ setup_stats() {
     iptables -X TRAFFIC_IN 2>/dev/null || true
     iptables -X TRAFFIC_OUT 2>/dev/null || true
 
-    # IPv6规则清理
+    # IPv6清理
     ip6tables -D INPUT -j TRAFFIC_IN 2>/dev/null || true
     ip6tables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
     ip6tables -F TRAFFIC_IN 2>/dev/null || true
@@ -110,154 +109,156 @@ setup_stats() {
     # 创建IPv4统计链
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
-    iptables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT
-    iptables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT
-    iptables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT
-    iptables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT
+    iptables -A TRAFFIC_IN -p tcp --dport $TARGET_PORT
+    iptables -A TRAFFIC_IN -p udp --dport $TARGET_PORT
+    iptables -A TRAFFIC_OUT -p tcp --sport $TARGET_PORT
+    iptables -A TRAFFIC_OUT -p udp --sport $TARGET_PORT
     iptables -I INPUT 1 -j TRAFFIC_IN
     iptables -I OUTPUT 1 -j TRAFFIC_OUT
 
-    # 创建IPv6统计链（新增）
+    # 创建IPv6统计链
     ip6tables -N TRAFFIC_IN
     ip6tables -N TRAFFIC_OUT
-    ip6tables -A TRAFFIC_IN -p tcp --dport \$TARGET_PORT
-    ip6tables -A TRAFFIC_IN -p udp --dport \$TARGET_PORT
-    ip6tables -A TRAFFIC_OUT -p tcp --sport \$TARGET_PORT
-    ip6tables -A TRAFFIC_OUT -p udp --sport \$TARGET_PORT
+    ip6tables -A TRAFFIC_IN -p tcp --dport $TARGET_PORT
+    ip6tables -A TRAFFIC_IN -p udp --dport $TARGET_PORT
+    ip6tables -A TRAFFIC_OUT -p tcp --sport $TARGET_PORT
+    ip6tables -A TRAFFIC_OUT -p udp --sport $TARGET_PORT
     ip6tables -I INPUT 1 -j TRAFFIC_IN
     ip6tables -I OUTPUT 1 -j TRAFFIC_OUT
 }
 
-
-
 send_tg() {
-    [ "\$TG_ENABLE" != "已开启" ] && return
-    local status_msg="\$1"
-    local time_now=\$(date '+%Y-%m-%d %H:%M:%S')
-    local text="🛡️ **流量防御系统**%0A服务器:\$SERVER_NAME%0A消息:\$status_msg%0A时间:\$time_now"
-    
-    # 添加超时参数，最多等待5秒
+    [ "$TG_ENABLE" != "已开启" ] && return
+    local status_msg="$1"
+    local time_now=$(date '+%Y-%m-%d %H:%M:%S')
+    local text="【流量防御系统】%0A服务器:$SERVER_NAME%0A消息:$status_msg%0A时间:$time_now"
     curl -s -m 5 --connect-timeout 3 -X POST \
-        "https://api.telegram.org/bot\$TG_TOKEN/sendMessage" \
-        -d "chat_id=\$TG_CHATID" \
-        -d "text=\$text" > /dev/null 2>&1 || true
+        "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+        -d "chat_id=$TG_CHATID" \
+        -d "text=$text" > /dev/null 2>&1 || true
 }
 
 clean_rules() {
-    # 清理IPv4规则
+    # 清理IPv4
     while true; do
-        num=\$(iptables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
-        [ -z "\$num" ] && break
-        iptables -D INPUT \$num 2>/dev/null || break
+        num=$(iptables -L INPUT --line-numbers -n 2>/dev/null | grep "DROP" | grep "dpt:$TARGET_PORT" | awk '{print $1}' | head -n1)
+        [ -z "$num" ] && break
+        iptables -D INPUT $num 2>/dev/null || break
     done
     
-    # 清理IPv6规则
+    # 清理IPv6
     while true; do
-        num=\$(ip6tables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
-        [ -z "\$num" ] && break
-        ip6tables -D INPUT \$num 2>/dev/null || break
+        num=$(ip6tables -L INPUT --line-numbers -n 2>/dev/null | grep "DROP" | grep "dpt:$TARGET_PORT" | awk '{print $1}' | head -n1)
+        [ -z "$num" ] && break
+        ip6tables -D INPUT $num 2>/dev/null || break
     done
     
-    # 记录清理日志
-    echo "\$(date '+%H:%M:%S') [清理] 已移除端口 \$TARGET_PORT 的所有阻断规则"
+    echo "$(date '+%H:%M:%S') [清理] 已移除所有阻断规则"
 }
-
 
 get_pure_bytes() {
-    # 获取网卡总流量
-    local total=\$(awk -v iface="\$INTERFACE" '\$1 ~ iface":" {print \$2, \$10}' /proc/net/dev | sed 's/:/ /g')
+    local total=$(awk -v iface="$INTERFACE" '$1 ~ iface":" {print $2, $10}' /proc/net/dev | sed 's/:/ /g')
     
-    # 获取IPv4业务端口统计
-    local p4_in=\$(iptables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
-    local p4_out=\$(iptables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    local p4_in=$(iptables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
+    local p4_out=$(iptables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
     
-    # 获取IPv6业务端口统计（新增）
-    local p6_in=\$(ip6tables -L TRAFFIC_IN -n -v -x | grep "dpt:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
-    local p6_out=\$(ip6tables -L TRAFFIC_OUT -n -v -x | grep "sport:\$TARGET_PORT" | awk '{sum+=\$2} END {print sum+0}')
+    local p6_in=$(ip6tables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
+    local p6_out=$(ip6tables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
     
-    read t_in t_out <<< "\$total"
+    read t_in t_out <<< "$total"
     
-    # 核心：扣除IPv4和IPv6的业务流量
-    local pure_in=\$((t_in - p4_in - p6_in))
-    local pure_out=\$((t_out - p4_out - p6_out))
+    local pure_in=$((t_in - p4_in - p6_in))
+    local pure_out=$((t_out - p4_out - p6_out))
     
-    # 防止出现负数
-    [ \$pure_in -lt 0 ] && pure_in=0
-    [ \$pure_out -lt 0 ] && pure_out=0
+    [ $pure_in -lt 0 ] && pure_in=0
+    [ $pure_out -lt 0 ] && pure_out=0
     
-    echo "\$pure_in \$pure_out"
+    echo "$pure_in $pure_out"
 }
-
 
 setup_stats
 port_blocked=false
 block_start_time=0
+last_attack_time=0
 history_window=()
+loop_count=0
 
 while true; do
-    # 健康检查：每60秒输出一次心跳
-    loop_count=\$((loop_count + 1))
-    if [ \$((loop_count % 60)) -eq 0 ]; then
-        echo "\$(date '+%H:%M:%S') [心跳] 服务运行正常 | 阻断状态:\$port_blocked"
+    loop_count=$((loop_count + 1))
+    
+    # 心跳检查
+    if [ $((loop_count % 60)) -eq 0 ]; then
+        echo "$(date '+%H:%M:%S') [心跳] 服务运行正常 | 阻断状态:$port_blocked"
     fi
     
-    read rx1 tx1 <<< \$(get_pure_bytes)
+    read rx1 tx1 <<< $(get_pure_bytes)
     sleep 1
-    read rx2 tx2 <<< \$(get_pure_bytes)
+    read rx2 tx2 <<< $(get_pure_bytes)
 
-    stats=\$(awk -v r1=\$rx1 -v r2=\$rx2 -v t1=\$tx1 -v t2=\$tx2 'BEGIN {
+    stats=$(awk -v r1=$rx1 -v r2=$rx2 -v t1=$tx1 -v t2=$tx2 'BEGIN {
         rx_speed = (r2 - r1) * 8 / 1024 / 1024;
         tx_speed = (t2 - t1) * 8 / 1024 / 1024;
         diff = rx_speed - tx_speed;
         if (diff < 0) diff = 0;
         printf "%.2f %.2f %.2f", rx_speed, tx_speed, diff
     }')
-    read rx_mbps tx_mbps diff_mbps <<< "\$stats"
-    is_bad=\$(awk -v diff="\$diff_mbps" -v thresh="\$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
+    read rx_mbps tx_mbps diff_mbps <<< "$stats"
+    is_bad=$(awk -v diff="$diff_mbps" -v thresh="$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
 
-    history_window+=(\$is_bad)
-    [ \${#history_window[@]} -gt \$WINDOW_DURATION ] && history_window=("\${history_window[@]:1}")
+    history_window+=($is_bad)
+    [ ${#history_window[@]} -gt $WINDOW_DURATION ] && history_window=("${history_window[@]:1}")
     total_bad=0
-    for val in "\${history_window[@]}"; do total_bad=\$((total_bad + val)); done
+    for val in "${history_window[@]}"; do total_bad=$((total_bad + val)); done
 
-    if ! \$port_blocked; then
-        echo "\$(date '+%H:%M:%S') [监控] 背景下载:\${rx_mbps}M | 差值:\${diff_mbps}M | 密度:\${total_bad}/\${WINDOW_DURATION}"
-        if [ "\$total_bad" -ge "\$TRIGGER_COUNT" ]; then
-            # 阻断端口
-            iptables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
-            iptables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
-            ip6tables -A INPUT -p tcp --dport \$TARGET_PORT -j DROP
-            ip6tables -A INPUT -p udp --dport \$TARGET_PORT -j DROP
+    if ! $port_blocked; then
+        echo "$(date '+%H:%M:%S') [监控] 背景下载:${rx_mbps}M | 差值:${diff_mbps}M | 密度:${total_bad}/${WINDOW_DURATION}"
+        
+        if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
+            echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
             
-            send_tg "⚠️ 检测到持续攻击，已阻断端口 \$TARGET_PORT"
+            iptables -A INPUT -p tcp --dport $TARGET_PORT -j DROP 2>/dev/null
+            iptables -A INPUT -p udp --dport $TARGET_PORT -j DROP 2>/dev/null
+            ip6tables -A INPUT -p tcp --dport $TARGET_PORT -j DROP 2>/dev/null
+            ip6tables -A INPUT -p udp --dport $TARGET_PORT -j DROP 2>/dev/null
+            
+            send_tg "检测到持续攻击，已阻断端口 $TARGET_PORT"
+            
             port_blocked=true
-            block_start_time=\$(date +%s)
+            block_start_time=$(date +%s)
+            last_attack_time=$block_start_time
+            
+            echo "$(date '+%H:%M:%S') [阻断] 端口已封锁，开始倒计时 ${BLOCK_DURATION}s"
         fi
     else
-        现在=\$(date +%s)
-        elapsed=\$((now - block_start_time))
-        remaining=\$((BLOCK_DURATION - elapsed))
-    
-        if [ "\$is_bad" -eq 1 ]; then
-            block_start_time=\$now
-            echo "\$(date '+%H:%M:%S') [⚡ 续期] 背景异常持续中，重置计时器"
+        now=$(date +%s)
+        elapsed=$((now - block_start_time))
+        remaining=$((BLOCK_DURATION - elapsed))
+        
+        # 关键修复：只记录最后一次攻击时间，不重置计时器起点
+        if [ "$is_bad" -eq 1 ]; then
+            last_attack_time=$now
+            time_since_last=$((now - last_attack_time))
+            echo "$(date '+%H:%M:%S') [攻击中] 检测到异常流量 | 已阻断:${elapsed}s"
         else
-            echo "\$(date '+%H:%M:%S') [🛡️ 防御] 剩余:\${remaining}s | 背景差值:\${diff_mbps}M"
+            time_since_last=$((now - last_attack_time))
+            echo "$(date '+%H:%M:%S') [防御中] 剩余:${remaining}s | 背景差值:${diff_mbps}M | 距上次攻击:${time_since_last}s"
         fi
-    
-        # 添加详细的解封日志
-        if [ "\$remaining" -le 0 ]; then
-            echo "\$(date '+%H:%M:%S') [解封] 开始清理阻断规则..."
+        
+        # 解封条件：阻断时间到期
+        if [ "$remaining" -le 0 ]; then
+            echo "$(date '+%H:%M:%S') [解封] 阻断时间已到，开始清理规则..."
             clean_rules
-            echo "\$(date '+%H:%M:%S') [解封] 规则清理完成，发送通知..."
-            send_tg "✅ 攻击停止，端口 \$TARGET_PORT 已自动解封"
-            echo "\$(date '+%H:%M:%S') [解封] 通知发送完成，恢复监控状态"
+            send_tg "攻击停止，端口 $TARGET_PORT 已自动解封"
+            echo "$(date '+%H:%M:%S') [解封] 恢复正常监控状态"
+            
             port_blocked=false
             history_window=()
+            block_start_time=0
+            last_attack_time=0
         fi
     fi
 done
-EOF
+SCRIPT_EOF
     chmod +x "$SCRIPT_PATH"
 }
 
@@ -342,7 +343,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "============================="
-    echo " 智能流量密度监控 v1.0.3"
+    echo " 智能流量密度监控 v1.0.2"
     echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
