@@ -134,24 +134,32 @@ send_tg() {
     [ "\$TG_ENABLE" != "已开启" ] && return
     local status_msg="\$1"
     local time_now=\$(date '+%Y-%m-%d %H:%M:%S')
-    local text="🛡️ **流量防御系统**%0A服务器：\$SERVER_NAME%0A消息：\$status_msg%0A时间：\$time_now"
-    curl -s -X POST "https://api.telegram.org/bot\$TG_TOKEN/sendMessage" -d "chat_id=\$TG_CHATID" -d "text=\$text" > /dev/null
+    local text="🛡️ **流量防御系统**%0A服务器:\$SERVER_NAME%0A消息:\$status_msg%0A时间:\$time_now"
+    
+    # 添加超时参数，最多等待5秒
+    curl -s -m 5 --connect-timeout 3 -X POST \
+        "https://api.telegram.org/bot\$TG_TOKEN/sendMessage" \
+        -d "chat_id=\$TG_CHATID" \
+        -d "text=\$text" > /dev/null 2>&1 || true
 }
 
 clean_rules() {
-    # 清理IPv4阻断规则
+    # 清理IPv4规则
     while true; do
         num=\$(iptables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
         [ -z "\$num" ] && break
-        iptables -D INPUT \$num
+        iptables -D INPUT \$num 2>/dev/null || break
     done
     
-    # 清理IPv6阻断规则
+    # 清理IPv6规则
     while true; do
         num=\$(ip6tables -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:\$TARGET_PORT" | awk '{print \$1}' | head -n1)
         [ -z "\$num" ] && break
-        ip6tables -D INPUT \$num
+        ip6tables -D INPUT \$num 2>/dev/null || break
     done
+    
+    # 记录清理日志
+    echo "\$(date '+%H:%M:%S') [清理] 已移除端口 \$TARGET_PORT 的所有阻断规则"
 }
 
 
@@ -187,6 +195,12 @@ block_start_time=0
 history_window=()
 
 while true; do
+    # 健康检查：每60秒输出一次心跳
+    loop_count=\$((loop_count + 1))
+    if [ \$((loop_count % 60)) -eq 0 ]; then
+        echo "\$(date '+%H:%M:%S') [心跳] 服务运行正常 | 阻断状态:\$port_blocked"
+    fi
+    
     read rx1 tx1 <<< \$(get_pure_bytes)
     sleep 1
     read rx2 tx2 <<< \$(get_pure_bytes)
@@ -220,18 +234,24 @@ while true; do
             block_start_time=\$(date +%s)
         fi
     else
-        now=\$(date +%s)
+        现在=\$(date +%s)
         elapsed=\$((now - block_start_time))
         remaining=\$((BLOCK_DURATION - elapsed))
+    
         if [ "\$is_bad" -eq 1 ]; then
             block_start_time=\$now
-            echo "\$(date '+%H:%M:%S') [⚡ 续期] 背景异常持续中"
+            echo "\$(date '+%H:%M:%S') [⚡ 续期] 背景异常持续中，重置计时器"
         else
             echo "\$(date '+%H:%M:%S') [🛡️ 防御] 剩余:\${remaining}s | 背景差值:\${diff_mbps}M"
         fi
+    
+        # 添加详细的解封日志
         if [ "\$remaining" -le 0 ]; then
+            echo "\$(date '+%H:%M:%S') [解封] 开始清理阻断规则..."
             clean_rules
+            echo "\$(date '+%H:%M:%S') [解封] 规则清理完成，发送通知..."
             send_tg "✅ 攻击停止，端口 \$TARGET_PORT 已自动解封"
+            echo "\$(date '+%H:%M:%S') [解封] 通知发送完成，恢复监控状态"
             port_blocked=false
             history_window=()
         fi
@@ -322,7 +342,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "============================="
-    echo " 智能流量密度监控 v1.0.2"
+    echo " 智能流量密度监控 v1.0.3"
     echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
