@@ -131,11 +131,29 @@ send_tg() {
     [ "$TG_ENABLE" != "已开启" ] && return
     local status_msg="$1"
     local time_now=$(date '+%Y-%m-%d %H:%M:%S')
-    local text="【流量防御系统】%0A服务器:$SERVER_NAME%0A消息:$status_msg%0A时间:$time_now"
-    curl -s -m 5 --connect-timeout 3 -X POST \
-        "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-        -d "chat_id=$TG_CHATID" \
-        -d "text=$text" > /dev/null 2>&1 || true
+    local text="🛡️ 流量防御系统%0A服务器: $SERVER_NAME%0A消息: $status_msg%0A时间: $time_now"
+    
+    echo "$(date '+%H:%M:%S') [TG] 准备发送: $status_msg"
+    
+    local retry=0
+    while [ $retry -lt 3 ]; do
+        local result=$(curl -s -m 10 --connect-timeout 5 -X POST \
+            "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+            -d "chat_id=$TG_CHATID" \
+            -d "text=$text" 2>&1)
+        
+        if echo "$result" | grep -q '"ok":true'; then
+            echo "$(date '+%H:%M:%S') [TG] ✅ 发送成功"
+            return 0
+        fi
+        
+        retry=$((retry + 1))
+        echo "$(date '+%H:%M:%S') [TG] ❌ 第${retry}次失败"
+        [ $retry -lt 3 ] && sleep 5
+    done
+    
+    echo "$(date '+%H:%M:%S') [TG] ⚠️ 最终失败"
+    return 1
 }
 
 clean_rules() {
@@ -343,7 +361,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "============================="
-    echo " 智能流量密度监控 v1.0.3"
+    echo " 智能流量密度监控 v1.0.4"
     echo " by：kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
