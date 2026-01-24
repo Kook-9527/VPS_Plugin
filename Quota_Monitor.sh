@@ -139,7 +139,7 @@ case "$1" in
             load_config
             clear
             echo "============================="
-            echo " 流量配额精确监控 v1.0"
+            echo " 流量配额精确监控 v1.0 | by：kook9527"
             echo " 周期：每月 $CYCLE_DAY 日 $CYCLE_TIME 重置"
             echo "============================="
             
