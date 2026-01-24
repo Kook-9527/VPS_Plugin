@@ -137,7 +137,7 @@ send_tg() {
     
     local retry=0
     while [ $retry -lt 3 ]; do
-        local result=$(curl -s -m 10 --connect-timeout 5 -X POST \
+        local result=$(curl -s -m 15 --connect-timeout 8 -X POST \
             "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
             -d "chat_id=$TG_CHATID" \
             -d "text=$text" 2>&1)
