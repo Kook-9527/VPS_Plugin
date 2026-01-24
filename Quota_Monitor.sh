@@ -138,10 +138,10 @@ case "$1" in
         while true; do
             load_config
             clear
-            echo "============================="
+            echo "==========================================="
             echo " 流量配额精确监控 v1.0 | by：kook9527"
             echo " 周期：每月 $CYCLE_DAY 日 $CYCLE_TIME 重置"
-            echo "============================="
+            echo "==========================================="
             
             CUR_M=$(get_total_mb)
             U_M=$((CUR_M - BASE_MB))
