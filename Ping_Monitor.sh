@@ -326,10 +326,9 @@ while true; do
     [ -z "$last_block" ] && last_block="无记录"
 
     clear
-    echo "============================="
-    echo " Ping Monitor 管理脚本 v1.2"
-    echo " by：Kook-9527"
-    echo "============================="
+    echo "=============================================="
+    echo " Ping Monitor 管理脚本 v1.0.2 | by：kook9527"
+    echo "=============================================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控端口：$PORT丨最近阻断：$last_block"
     echo "当前阈值：连续${REQUIRED_CONSECUTIVE}次超过${LATENCY_THRESHOLD}ms会阻断，然后${BLOCK_DURATION}秒后恢复"
