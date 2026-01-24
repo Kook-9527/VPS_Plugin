@@ -362,7 +362,7 @@ while true; do
     clear
     echo "============================="
     echo " 智能流量密度监控 v1.0.4"
-    echo " by：kook9527"
+    echo " by：Kook9527"
     echo "============================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
