@@ -131,13 +131,17 @@ send_tg() {
     [ "$TG_ENABLE" != "已开启" ] && return
     local status_msg="$1"
     local time_now=$(date '+%Y-%m-%d %H:%M:%S')
-    local text="🛡️ 流量防御系统%0A服务器: $SERVER_NAME%0A消息: $status_msg%0A时间: $time_now"
+    local text="🛡️ 流量防御系统%0A━━━━━━━━━━━━━━━%0A服务器: $SERVER_NAME%0A消息: $status_msg%0A时间: $time_now"
     
     echo "$(date '+%H:%M:%S') [TG] 准备发送: $status_msg"
     
+    # 增加到5次重试，使用指数退避
     local retry=0
-    while [ $retry -lt 3 ]; do
-        local result=$(curl -s -m 15 --connect-timeout 8 -X POST \
+    local max_retry=5
+    local wait_time=3
+    
+    while [ $retry -lt $max_retry ]; do
+        local result=$(curl -s -m 20 --connect-timeout 10 -X POST \
             "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
             -d "chat_id=$TG_CHATID" \
             -d "text=$text" 2>&1)
@@ -148,13 +152,29 @@ send_tg() {
         fi
         
         retry=$((retry + 1))
-        echo "$(date '+%H:%M:%S') [TG] ❌ 第${retry}次失败"
-        [ $retry -lt 3 ] && sleep 5
+        
+        # 记录详细错误（但不输出完整result，太长）
+        if echo "$result" | grep -q "timed out"; then
+            echo "$(date '+%H:%M:%S') [TG] ❌ 第${retry}次失败: 连接超时"
+        elif echo "$result" | grep -q "Connection refused"; then
+            echo "$(date '+%H:%M:%S') [TG] ❌ 第${retry}次失败: 连接被拒绝"
+        else
+            echo "$(date '+%H:%M:%S') [TG] ❌ 第${retry}次失败: 未知错误"
+        fi
+        
+        # 指数退避：3秒 -> 6秒 -> 12秒 -> 24秒
+        if [ $retry -lt $max_retry ]; then
+            echo "$(date '+%H:%M:%S') [TG] 等待 ${wait_time}秒 后重试..."
+            sleep $wait_time
+            wait_time=$((wait_time * 2))
+            [ $wait_time -gt 30 ] && wait_time=30  # 最多等30秒
+        fi
     done
     
-    echo "$(date '+%H:%M:%S') [TG] ⚠️ 最终失败"
+    echo "$(date '+%H:%M:%S') [TG] ⚠️ 最终失败，已重试${max_retry}次"
     return 1
 }
+
 
 clean_rules() {
     # 清理IPv4
