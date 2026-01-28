@@ -249,7 +249,7 @@ while true; do
     for val in "${history_window[@]}"; do total_bad=$((total_bad + val)); done
 
     if ! $port_blocked; then
-        echo "$(date '+%H:%M:%S') [监控] 背景下载:${rx_mbps}Mbps | 差值:${diff_mbps}Mbps | 密度:${total_bad}/${WINDOW_DURATION}"
+        echo "$(date '+%H:%M:%S') [监控] 流量:${rx_mbps}Mbps | 差值:${diff_mbps}Mbps | 密度:${total_bad}/${WINDOW_DURATION}"
         
         if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
             echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
@@ -268,7 +268,7 @@ while true; do
             echo "$(date '+%H:%M:%S') [阻断] 端口已封锁，开始倒计时 ${BLOCK_DURATION}s"
         fi
     else
-        now=$(date +%s)
+        现在=$(date +%s)
         elapsed=$((now - block_start_time))
         remaining=$((BLOCK_DURATION - elapsed))
         
@@ -324,7 +324,7 @@ modify_params() {
     echo "       修改运行参数"
     echo "============================="
     read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input; BLOCK_PORT=${input:-$BLOCK_PORT}
-    read -rp "2. 流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input; DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
+    read -rp "2. 出入口流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input; DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
     read -rp "3. 检测时间窗口：秒 [当前: $WINDOW_DURATION]: " input; WINDOW_DURATION=${input:-$WINDOW_DURATION}
     read -rp "4. 窗口内触发次数 [当前: $TRIGGER_COUNT]: " input; TRIGGER_COUNT=${input:-$TRIGGER_COUNT}
     read -rp "5. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input; BLOCK_DURATION=${input:-$BLOCK_DURATION}
@@ -381,7 +381,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "========================================"
-    echo " 智能流量密度监控 v1.0.4 | by：kook9527"
+    echo " 智能流量密度监控 v1.0.5 | by：kook9527"
     echo "========================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
