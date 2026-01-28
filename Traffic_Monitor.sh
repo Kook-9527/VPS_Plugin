@@ -217,6 +217,7 @@ get_pure_bytes() {
 setup_stats
 port_blocked=false
 block_start_time=0
+block_end_time=0
 last_attack_time=0
 history_window=()
 loop_count=0
@@ -269,8 +270,14 @@ while true; do
         fi
     else
         now=$(date +%s)
+    
+        # 使用结束时间而不是持续时间
+        if [ "$block_end_time" -eq 0 ]; then
+            block_end_time=$((block_start_time + BLOCK_DURATION))
+        fi
+    
         elapsed=$((now - block_start_time))
-        remaining=$((BLOCK_DURATION - elapsed))
+        remaining=$((block_end_time - now))
         time_since_last=$((now - last_attack_time))
     
         # 新逻辑：如果检测到攻击
@@ -278,11 +285,11 @@ while true; do
             last_attack_time=$now
             time_since_last=0
         
-            # 如果在最后30秒内检测到攻击，延长阻断时间
+            # 如果在最后30秒内检测到攻击，延长结束时间
             if [ "$remaining" -le 30 ]; then
-                echo "$(date '+%H:%M:%S') [攻击中] 最后30秒内检测到攻击，延长阻断时间30秒 | 已阻断:${elapsed}s"
-                block_start_time=$((block_start_time + 30))
-                remaining=$((remaining + 30))
+                block_end_time=$((block_end_time + 30))
+                remaining=$((block_end_time - now))
+                echo "$(date '+%H:%M:%S') [攻击中] 最后30秒内检测到攻击，延长30秒 | 已阻断:${elapsed}s | 新剩余:${remaining}s"
             else
                 echo "$(date '+%H:%M:%S') [攻击中] 检测到异常流量 | 已阻断:${elapsed}s | 剩余:${remaining}s"
             fi
@@ -290,8 +297,8 @@ while true; do
             echo "$(date '+%H:%M:%S') [防御中] 剩余:${remaining}s | 差值:${diff_mbps}Mbps | 距上次攻击:${time_since_last}s"
         fi
     
-        # 解封条件：阻断时间到期 且 距上次攻击超过30秒
-        if [ "$remaining" -le 0 ] && [ "$time_since_last" -ge 30 ]; then
+        # 解封条件：当前时间超过结束时间 且 距上次攻击超过30秒
+        if [ "$now" -ge "$block_end_time" ] && [ "$time_since_last" -ge 30 ]; then
             echo "$(date '+%H:%M:%S') [解封] 阻断时间已到且30秒内无攻击，开始清理规则..."
             clean_rules
             send_tg "攻击停止，端口 $TARGET_PORT 已自动解封"
@@ -300,11 +307,12 @@ while true; do
             port_blocked=false
             history_window=()
             block_start_time=0
+            block_end_time=0
             last_attack_time=0
-        elif [ "$remaining" -le 0 ] && [ "$time_since_last" -lt 30 ]; then
+        elif [ "$now" -ge "$block_end_time" ] && [ "$time_since_last" -lt 30 ]; then
             echo "$(date '+%H:%M:%S') [等待] 阻断时间已到，但距上次攻击仅${time_since_last}秒，等待30秒无攻击后解封..."
-            # 延长阻断时间到距上次攻击30秒
-            block_start_time=$((last_attack_time - BLOCK_DURATION + 30))
+            # 延长到距上次攻击30秒后
+            block_end_time=$((last_attack_time + 30))
         fi
     fi
 done
@@ -393,7 +401,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "========================================"
-    echo " DDoS流量监控脚本 v1.0.6 | by：kook9527"
+    echo " DDoS流量监控脚本 v1.0.7 | by：kook9527"
     echo "========================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
