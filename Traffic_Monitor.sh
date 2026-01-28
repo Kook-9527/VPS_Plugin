@@ -395,21 +395,64 @@ remove_monitor() {
 }
 
 view_logs() {
-    clear
-    echo "========================================"
-    echo "       实时监控日志"
-    echo "========================================"
-    echo "提示："
-    echo "  - 按 Ctrl+C 退出日志查看"
-    echo "  - 日志会实时滚动显示"
-    echo "========================================"
-    echo ""
-    read -p "按回车开始查看实时日志..." 
-    echo ""
-    echo ""
-    
-    # 实时查看日志
-    journalctl -u traffic-monitor.service -f
+    while true; do
+        clear
+        echo "========================================"
+        echo "       日志查看选项"
+        echo "========================================"
+        echo "1) 实时监控日志（滚动显示）"
+        echo "2) 查看最近100条日志"
+        echo "3) 查看最近的阻断/解封记录"
+        echo "4) 查看最近的TG通知记录"
+        echo "5) 查看最近30分钟的日志"
+        echo "0) 返回主菜单"
+        echo "========================================"
+        read -rp "请选择 [0-5]: " log_choice
+        
+        case "$log_choice" in
+            1)
+                clear
+                echo "【实时日志】按 Ctrl+C 退出"
+                echo "========================================"
+                journalctl -u traffic-monitor.service -f
+                ;;
+            2)
+                clear
+                echo "【最近100条日志】"
+                echo "========================================"
+                journalctl -u traffic-monitor.service -n 100 --no-pager
+                read -p "按回车返回..."
+                ;;
+            3)
+                clear
+                echo "【阻断/解封记录】"
+                echo "========================================"
+                journalctl -u traffic-monitor.service --no-pager | grep -E "告警|阻断|解封" | tail -50
+                read -p "按回车返回..."
+                ;;
+            4)
+                clear
+                echo "【TG通知记录】"
+                echo "========================================"
+                journalctl -u traffic-monitor.service --no-pager | grep "\[TG\]" | tail -50
+                read -p "按回车返回..."
+                ;;
+            5)
+                clear
+                echo "【最近30分钟日志】"
+                echo "========================================"
+                journalctl -u traffic-monitor.service --since "30 min ago" --no-pager
+                read -p "按回车返回..."
+                ;;
+            0)
+                break
+                ;;
+            *)
+                echo "无效选项，请重试"
+                sleep 1
+                ;;
+        esac
+    done
 }
 
 
