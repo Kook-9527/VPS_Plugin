@@ -419,9 +419,9 @@ view_logs() {
 while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
-    echo "========================================"
+    echo "==================================================="
     echo " DDoS流量监控+阻断节点端口脚本 v1.0.7 | by：kook9527"
-    echo "========================================"
+    echo "==================================================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE  丨阻断端口：$BLOCK_PORT"
     echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps丨业务隔离：已完全排除端口 $BLOCK_PORT 的流量"
