@@ -249,7 +249,7 @@ while true; do
     for val in "${history_window[@]}"; do total_bad=$((total_bad + val)); done
 
     if ! $port_blocked; then
-        echo "$(date '+%H:%M:%S') [监控] 背景下载:${rx_mbps}Mbps | 差值:${diff_mbps}M | 密度:${total_bad}/${WINDOW_DURATION}"
+        echo "$(date '+%H:%M:%S') [监控] 背景下载:${rx_mbps}Mbps | 差值:${diff_mbps}Mbps | 密度:${total_bad}/${WINDOW_DURATION}"
         
         if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
             echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
@@ -279,7 +279,7 @@ while true; do
             echo "$(date '+%H:%M:%S') [攻击中] 检测到异常流量 | 已阻断:${elapsed}s"
         else
             time_since_last=$((now - last_attack_time))
-            echo "$(date '+%H:%M:%S') [防御中] 剩余:${remaining}s | 背景差值:${diff_mbps}M | 距上次攻击:${time_since_last}s"
+            echo "$(date '+%H:%M:%S') [防御中] 剩余:${remaining}s | 差值:${diff_mbps}Mbps | 距上次攻击:${time_since_last}s"
         fi
         
         # 解封条件：阻断时间到期
