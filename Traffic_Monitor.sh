@@ -21,7 +21,7 @@ TRIGGER_COUNT=10                   # 窗口内触发次数阈值
 NET_INTERFACE=""                   # 网卡名称 (留空自动检测)
 
 SERVICE_NAME="traffic-monitor.service"
-SCRIPT_PATH="/root/check_traffic_loop.sh"
+SCRIPT_PATH="/root/traffic_Log.sh"
 CONFIG_FILE="/etc/traffic_monitor_config.sh"
 
 # =========================
