@@ -289,12 +289,12 @@ while true; do
             if [ "$remaining" -le 30 ]; then
                 block_end_time=$((block_end_time + 30))
                 remaining=$((block_end_time - now))
-                echo "$(date '+%H:%M:%S') [攻击中] 最后30秒内检测到攻击，延长30秒 | 已阻断:${elapsed}s | 新剩余:${remaining}s"
+                echo "$(date '+%H:%M:%S') 最后30秒内检测到攻击，延长30秒 | 已阻断:${elapsed}s | 新剩余:${remaining}s"
             else
-                echo "$(date '+%H:%M:%S') [攻击中] 检测到异常流量 | 差值:${diff_mbps}Mbps | 已阻断:${elapsed}s | 剩余:${remaining}s"
+                echo "$(date '+%H:%M:%S') 检测到异常流量 | 差值:${diff_mbps}Mbps | 已阻断:${elapsed}s | 剩余:${remaining}s"
             fi
         else
-            echo "$(date '+%H:%M:%S') [防御中] 剩余:${remaining}s | 差值:${diff_mbps}Mbps | 距上次攻击:${time_since_last}s"
+            echo "$(date '+%H:%M:%S') 阻断剩余:${remaining}s | 差值:${diff_mbps}Mbps | 距上次攻击:${time_since_last}s"
         fi
     
         # 解封条件：当前时间超过结束时间 且 距上次攻击超过30秒
