@@ -427,15 +427,15 @@ while true; do
     echo "监控网卡：$NET_INTERFACE  丨阻断端口：$BLOCK_PORT"
     echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps丨业务隔离：已完全排除端口 $BLOCK_PORT 的流量"
     echo "阻断逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
-    echo "延时逻辑：阻断期内若检测到异常，自动重置${BLOCK_DURATION}秒"
-    echo "============================="
+    echo "延时逻辑：阻断期内若检测到异常，自动延长阻断时间，直至差值 < ${DIFF_THRESHOLD}Mbps 才恢复正常"
+    echo "======================================"
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
     echo "3) 修改脚本参数"
     echo "4) 清理并复原"
     echo "5) 实时监控日志"
     echo "0) 退出"
-    echo "============================="
+    echo "======================================"
     read -rp "请输入选项 [0-5]: " choice
     case "$choice" in
         1) install_monitor ;;
