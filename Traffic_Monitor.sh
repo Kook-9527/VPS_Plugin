@@ -294,7 +294,7 @@ while true; do
                 echo "$(date '+%H:%M:%S') 检测到异常流量 | 差值:${diff_mbps}Mbps | 已阻断:${elapsed}s | 剩余:${remaining}s"
             fi
         else
-            echo "$(date '+%H:%M:%S') 正常流量差值:${diff_mbps}Mbps | 阻断时间剩余:${remaining}s | 距上次攻击:${time_since_last}s"
+            echo "$(date '+%H:%M:%S') [监控] 流量:${rx_mbps}Mbps | 差值:${diff_mbps}Mbps | 阻断剩余:${remaining}s | 距上次攻击:${time_since_last}s"
         fi
     
         # 解封条件：当前时间超过结束时间 且 距上次攻击超过30秒
