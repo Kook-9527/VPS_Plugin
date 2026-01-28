@@ -268,7 +268,7 @@ while true; do
             echo "$(date '+%H:%M:%S') [阻断] 端口已封锁，开始倒计时 ${BLOCK_DURATION}s"
         fi
     else
-        现在=$(date +%s)
+        now=$(date +%s)
         elapsed=$((now - block_start_time))
         remaining=$((BLOCK_DURATION - elapsed))
         
