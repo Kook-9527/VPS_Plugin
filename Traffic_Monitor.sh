@@ -401,7 +401,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "========================================"
-    echo " DDoS流量监控脚本 v1.0.6 | by：kook9527"
+    echo " DDoS流量监控脚本 v1.0.5 | by：kook9527"
     echo "========================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
