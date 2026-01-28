@@ -291,7 +291,7 @@ while true; do
                 remaining=$((block_end_time - now))
                 echo "$(date '+%H:%M:%S') [攻击中] 最后30秒内检测到攻击，延长30秒 | 已阻断:${elapsed}s | 新剩余:${remaining}s"
             else
-                echo "$(date '+%H:%M:%S') [攻击中] 检测到异常流量 | 已阻断:${elapsed}s | 剩余:${remaining}s"
+                echo "$(date '+%H:%M:%S') [攻击中] 检测到异常流量 | 差值:${diff_mbps}Mbps | 已阻断:${elapsed}s | 剩余:${remaining}s"
             fi
         else
             echo "$(date '+%H:%M:%S') [防御中] 剩余:${remaining}s | 差值:${diff_mbps}Mbps | 距上次攻击:${time_since_last}s"
@@ -401,7 +401,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "========================================"
-    echo " DDoS流量监控脚本 v1.0.7 | by：kook9527"
+    echo " DDoS流量监控脚本 v1.0.6 | by：kook9527"
     echo "========================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
