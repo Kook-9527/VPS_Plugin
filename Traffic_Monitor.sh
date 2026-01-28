@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================
-# 智能流量密度监控 & 端口阻断脚本 (滑动窗口版)
+# DDoS流量监控脚本
 # 核心逻辑：
 #   1. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口。
 #   2. 每秒检测一次全网卡流量差值 (已排除业务端口流量)。
@@ -131,7 +131,7 @@ send_tg() {
     [ "$TG_ENABLE" != "已开启" ] && return
     local status_msg="$1"
     local time_now=$(date '+%Y-%m-%d %H:%M:%S')
-    local text="🛡️ 流量防御系统%0A━━━━━━━━━━━━━━━%0A服务器: $SERVER_NAME%0A消息: $status_msg%0A时间: $time_now"
+    local text="🛡️ DDoS流量监控%0A━━━━━━━━━━━━━━━%0A服务器: $SERVER_NAME%0A消息: $status_msg%0A时间: $time_now"
     
     echo "$(date '+%H:%M:%S') [TG] 准备发送: $status_msg"
     
@@ -381,7 +381,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "========================================"
-    echo " 智能流量密度监控 v1.0.5 | by：kook9527"
+    echo " DDoS流量监控脚本 v1.0.5 | by：kook9527"
     echo "========================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE丨阻断端口：$BLOCK_PORT"
