@@ -394,6 +394,23 @@ remove_monitor() {
     echo "✅ 清理完成。"
 }
 
+view_logs() {
+    clear
+    echo "========================================"
+    echo "       实时监控日志"
+    echo "========================================"
+    echo "提示："
+    echo "  - 按 Ctrl+C 退出日志查看"
+    echo "  - 日志会实时滚动显示"
+    echo "========================================"
+    echo ""
+    read -p "按回车开始查看实时日志..." 
+    
+    # 实时查看日志
+    journalctl -u traffic-monitor.service -f
+}
+
+
 # ============================================
 # 主界面
 # ============================================
@@ -401,7 +418,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "========================================"
-    echo " DDoS流量监控脚本 v1.0.6 | by：kook9527"
+    echo " DDoS流量监控脚本 v1.0.7 | by：kook9527"
     echo "========================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE  丨阻断端口：$BLOCK_PORT"
@@ -413,14 +430,16 @@ while true; do
     echo "2) TG通知设置"
     echo "3) 修改脚本参数"
     echo "4) 清理并复原"
+    echo "5) 实时监控日志"
     echo "0) 退出"
     echo "============================="
-    read -rp "请输入选项 [0-4]: " choice
+    read -rp "请输入选项 [0-5]: " choice
     case "$choice" in
         1) install_monitor ;;
         2) setup_tg ;;
         3) modify_params ;;
         4) remove_monitor ;;
+        5) view_logs ;;
         0) exit 0 ;;
     esac
     read -p "按回车返回菜单..." 
