@@ -405,6 +405,8 @@ view_logs() {
     echo "========================================"
     echo ""
     read -p "按回车开始查看实时日志..." 
+    echo ""
+    echo ""
     
     # 实时查看日志
     journalctl -u traffic-monitor.service -f
