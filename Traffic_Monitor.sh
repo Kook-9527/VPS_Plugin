@@ -109,20 +109,33 @@ setup_stats() {
     # 创建IPv4统计链
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
-    iptables -A TRAFFIC_IN -p tcp --dport $TARGET_PORT
-    iptables -A TRAFFIC_IN -p udp --dport $TARGET_PORT
-    iptables -A TRAFFIC_OUT -p tcp --sport $TARGET_PORT
-    iptables -A TRAFFIC_OUT -p udp --sport $TARGET_PORT
+    
+    # 循环添加每个端口的规则
+    IFS=',' read -ra PORTS <<< "$TARGET_PORT"
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')  # 去除空格
+        iptables -A TRAFFIC_IN -p tcp --dport $port
+        iptables -A TRAFFIC_IN -p udp --dport $port
+        iptables -A TRAFFIC_OUT -p tcp --sport $port
+        iptables -A TRAFFIC_OUT -p udp --sport $port
+    done
+    
     iptables -I INPUT 1 -j TRAFFIC_IN
     iptables -I OUTPUT 1 -j TRAFFIC_OUT
 
     # 创建IPv6统计链
     ip6tables -N TRAFFIC_IN
     ip6tables -N TRAFFIC_OUT
-    ip6tables -A TRAFFIC_IN -p tcp --dport $TARGET_PORT
-    ip6tables -A TRAFFIC_IN -p udp --dport $TARGET_PORT
-    ip6tables -A TRAFFIC_OUT -p tcp --sport $TARGET_PORT
-    ip6tables -A TRAFFIC_OUT -p udp --sport $TARGET_PORT
+    
+    # 循环添加每个端口的规则
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        ip6tables -A TRAFFIC_IN -p tcp --dport $port
+        ip6tables -A TRAFFIC_IN -p udp --dport $port
+        ip6tables -A TRAFFIC_OUT -p tcp --sport $port
+        ip6tables -A TRAFFIC_OUT -p udp --sport $port
+    done
+    
     ip6tables -I INPUT 1 -j TRAFFIC_IN
     ip6tables -I OUTPUT 1 -j TRAFFIC_OUT
 }
@@ -177,18 +190,27 @@ send_tg() {
 
 
 clean_rules() {
-    # 清理IPv4
-    while true; do
-        num=$(iptables -L INPUT --line-numbers -n 2>/dev/null | grep "DROP" | grep "dpt:$TARGET_PORT" | awk '{print $1}' | head -n1)
-        [ -z "$num" ] && break
-        iptables -D INPUT $num 2>/dev/null || break
+    # 分割端口列表
+    IFS=',' read -ra PORTS <<< "$TARGET_PORT"
+    
+    # 清理每个端口的IPv4规则
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        while true; do
+            num=$(iptables -L INPUT --line-numbers -n 2>/dev/null | grep "DROP" | grep "dpt:$port" | awk '{print $1}' | head -n1)
+            [ -z "$num" ] && break
+            iptables -D INPUT $num 2>/dev/null || break
+        done
     done
     
-    # 清理IPv6
-    while true; do
-        num=$(ip6tables -L INPUT --line-numbers -n 2>/dev/null | grep "DROP" | grep "dpt:$TARGET_PORT" | awk '{print $1}' | head -n1)
-        [ -z "$num" ] && break
-        ip6tables -D INPUT $num 2>/dev/null || break
+    # 清理每个端口的IPv6规则
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        while true; do
+            num=$(ip6tables -L INPUT --line-numbers -n 2>/dev/null | grep "DROP" | grep "dpt:$port" | awk '{print $1}' | head -n1)
+            [ -z "$num" ] && break
+            ip6tables -D INPUT $num 2>/dev/null || break
+        done
     done
     
     echo "$(date '+%H:%M:%S') [清理] 已移除所有阻断规则"
@@ -197,11 +219,22 @@ clean_rules() {
 get_pure_bytes() {
     local total=$(awk -v iface="$INTERFACE" '$1 ~ iface":" {print $2, $10}' /proc/net/dev | sed 's/:/ /g')
     
-    local p4_in=$(iptables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
-    local p4_out=$(iptables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
+    # 分割端口列表
+    IFS=',' read -ra PORTS <<< "$TARGET_PORT"
     
-    local p6_in=$(ip6tables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
-    local p6_out=$(ip6tables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$TARGET_PORT" | awk '{sum+=$2} END {print sum+0}')
+    local p4_in=0
+    local p4_out=0
+    local p6_in=0
+    local p6_out=0
+    
+    # 循环统计每个端口的流量
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        p4_in=$((p4_in + $(iptables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')))
+        p4_out=$((p4_out + $(iptables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$port" | awk '{sum+=$2} END {print sum+0}')))
+        p6_in=$((p6_in + $(ip6tables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')))
+        p6_out=$((p6_out + $(ip6tables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$port" | awk '{sum+=$2} END {print sum+0}')))
+    done
     
     read t_in t_out <<< "$total"
     
@@ -254,18 +287,23 @@ while true; do
         
         if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
             echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
-            
-            iptables -A INPUT -p tcp --dport $TARGET_PORT -j DROP 2>/dev/null
-            iptables -A INPUT -p udp --dport $TARGET_PORT -j DROP 2>/dev/null
-            ip6tables -A INPUT -p tcp --dport $TARGET_PORT -j DROP 2>/dev/null
-            ip6tables -A INPUT -p udp --dport $TARGET_PORT -j DROP 2>/dev/null
-            
+    
+            # 分割端口列表并逐个阻断
+            IFS=',' read -ra PORTS <<< "$TARGET_PORT"
+            for port in "${PORTS[@]}"; do
+                port=$(echo "$port" | tr -d ' ')
+                iptables -A INPUT -p tcp --dport $port -j DROP 2>/dev/null
+                iptables -A INPUT -p udp --dport $port -j DROP 2>/dev/null
+                ip6tables -A INPUT -p tcp --dport $port -j DROP 2>/dev/null
+                ip6tables -A INPUT -p udp --dport $port -j DROP 2>/dev/null
+            done
+    
             send_tg "检测到持续攻击，已阻断端口 $TARGET_PORT"
-            
+    
             port_blocked=true
             block_start_time=$(date +%s)
             last_attack_time=$block_start_time
-            
+    
             echo "$(date '+%H:%M:%S') [阻断] 端口已封锁，开始倒计时 ${BLOCK_DURATION}s"
         fi
     else
@@ -343,6 +381,7 @@ modify_params() {
     echo "============================="
     echo "       修改运行参数"
     echo "============================="
+    echo "提示：端口支持多个，用逗号分隔，如：55555,55556,55557"
     read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input; BLOCK_PORT=${input:-$BLOCK_PORT}
     read -rp "2. 出入口流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input; DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
     read -rp "3. 检测时间窗口：秒 [当前: $WINDOW_DURATION]: " input; WINDOW_DURATION=${input:-$WINDOW_DURATION}
@@ -357,6 +396,7 @@ modify_params() {
 install_monitor() {
     echo "📥 安装中..."
     install_dependencies
+    echo "提示：端口支持多个，用逗号分隔，如：55555,55556,55557"
     read -rp "请输入受到攻击时要阻断的端口 [默认 $BLOCK_PORT]: " USER_PORT
     BLOCK_PORT="${USER_PORT:-$BLOCK_PORT}"
     setup_tg
@@ -383,13 +423,20 @@ remove_monitor() {
     iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
     iptables -F TRAFFIC_IN 2>/dev/null || true; iptables -X TRAFFIC_IN 2>/dev/null || true
     iptables -F TRAFFIC_OUT 2>/dev/null || true; iptables -X TRAFFIC_OUT 2>/dev/null || true
+    
+    # 清理多个端口的阻断规则
+    IFS=',' read -ra PORTS <<< "$BLOCK_PORT"
     for proto in iptables ip6tables; do
-        while true; do
-            num=$($proto -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:$BLOCK_PORT" | awk '{print $1}' | head -n1)
-            [ -z "$num" ] && break
-            $proto -D INPUT $num
+        for port in "${PORTS[@]}"; do
+            port=$(echo "$port" | tr -d ' ')
+            while true; do
+                num=$($proto -L INPUT --line-numbers -n | grep "DROP" | grep "dpt:$port" | awk '{print $1}' | head -n1)
+                [ -z "$num" ] && break
+                $proto -D INPUT $num
+            done
         done
     done
+    
     rm -f "/etc/systemd/system/$SERVICE_NAME" "$SCRIPT_PATH" "$CONFIG_FILE"
     echo "✅ 清理完成。"
 }
@@ -463,7 +510,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "======================================"
-    echo " DDoS流量监控+阻断节点端口脚本 v1.0.7"
+    echo " DDoS流量监控+阻断节点端口脚本 v1.0.8"
     echo " by：kook9527"
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
