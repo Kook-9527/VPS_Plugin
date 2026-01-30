@@ -32,7 +32,7 @@ load_config() {
 
 save_config() {
     cat << EOF > "$CONFIG_FILE"
-BLOCK_PORT=$BLOCK_PORT
+BLOCK_PORT="$BLOCK_PORT"
 QUOTA_GB=$QUOTA_GB
 CYCLE_DAY=$CYCLE_DAY
 CYCLE_TIME=$CYCLE_TIME
@@ -52,25 +52,29 @@ send_tg() {
     if [ "$TG_ENABLE" == "已开启" ] && [ -n "$TG_TOKEN" ]; then
         local msg="$1"
         local time_now=$(date '+%Y-%m-%d %H:%M:%S')
-        # 针对 TG API 的特殊字符处理
-        local text="🛡️ **流量配额通知**%0A-----------------------------------------%0A📌 服务器：$SERVER_NAME%0A📢 消息：$msg%0A⏰ 时间：$time_now"
-        curl -s -X POST "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
-             -d "chat_id=$TG_CHATID" \
-             -d "parse_mode=Markdown" \
-             -d "text=$text" > /dev/null 2>&1
+        local text="🛡️ 流量配额通知%0A━━━━━━━━━━━━━━━%0A📌 服务器：$SERVER_NAME%0A📢 消息：$msg%0A⏰ 时间：$time_now"
+        
+        local retry=0
+        while [ $retry -lt 3 ]; do
+            local result=$(curl -s -m 10 --connect-timeout 5 -X POST \
+                "https://api.telegram.org/bot$TG_TOKEN/sendMessage" \
+                -d "chat_id=$TG_CHATID" \
+                -d "text=$text" 2>&1)
+            
+            if echo "$result" | grep -q '"ok":true'; then
+                return 0
+            fi
+            retry=$((retry + 1))
+            [ $retry -lt 3 ] && sleep 3
+        done
     fi
 }
 
 get_total_mb() {
-    # 使用 json 格式获取总字节数，并转换为 MiB (除以 1024 再除以 1024)
-    # 逻辑：(rx + tx) / 1024 / 1024
     local total_mib=$(vnstat -i "$NET_INTERFACE" --json | jq '.interfaces[0].traffic.total.rx + .interfaces[0].traffic.total.tx' | awk '{printf "%.0f", $1/1024/1024}')
     
-    # 如果没有 jq 或者获取失败，使用备用解析方案
     if [[ -z "$total_mib" || "$total_mib" == "0" ]]; then
-        # 兜底方案：从 oneline 中提取，并去掉 GiB 等单位
         local raw_total=$(vnstat -i "$NET_INTERFACE" --oneline | cut -d';' -f6)
-        # 将 "7.85 GiB" 转换为 MiB 数字
         total_mib=$(echo "$raw_total" | awk '{
             if($2=="GiB") print $1*1024;
             else if($2=="MiB") print $1;
@@ -80,6 +84,38 @@ get_total_mb() {
     fi
     echo "${total_mib:-0}"
 }
+
+# --- 多端口封禁函数 ---
+block_ports() {
+    IFS=',' read -ra PORTS <<< "$BLOCK_PORT"
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        iptables -I INPUT -p tcp --dport "$port" -j DROP 2>/dev/null
+        iptables -I INPUT -p udp --dport "$port" -j DROP 2>/dev/null
+        ip6tables -I INPUT -p tcp --dport "$port" -j DROP 2>/dev/null
+        ip6tables -I INPUT -p udp --dport "$port" -j DROP 2>/dev/null
+    done
+}
+
+# --- 多端口解封函数 ---
+unblock_ports() {
+    IFS=',' read -ra PORTS <<< "$BLOCK_PORT"
+    for port in "${PORTS[@]}"; do
+        port=$(echo "$port" | tr -d ' ')
+        iptables -D INPUT -p tcp --dport "$port" -j DROP 2>/dev/null
+        iptables -D INPUT -p udp --dport "$port" -j DROP 2>/dev/null
+        ip6tables -D INPUT -p tcp --dport "$port" -j DROP 2>/dev/null
+        ip6tables -D INPUT -p udp --dport "$port" -j DROP 2>/dev/null
+    done
+}
+
+# --- 检查端口是否被封禁 ---
+check_ports_blocked() {
+    IFS=',' read -ra PORTS <<< "$BLOCK_PORT"
+    local port=$(echo "${PORTS[0]}" | tr -d ' ')
+    iptables -L INPUT -n 2>/dev/null | grep -q "dpt:$port.*DROP" && return 0 || return 1
+}
+
 # --- 后台逻辑 ---
 run_monitor() {
     echo "[$(date '+%T')] 监控服务已启动..."
@@ -103,10 +139,9 @@ run_monitor() {
                 BASE_MB=$CURRENT_TOTAL
                 LAST_RESET_MONTH=$NOW_MONTH
                 HAS_BLOCKED=false
-                iptables -D INPUT -p tcp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-                iptables -D INPUT -p udp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
+                unblock_ports
                 save_config
-                send_tg "✅ 新周期已开始！所有端口已解封，流量统计已重置。"
+                send_tg "✅ 新周期已开始！端口 $BLOCK_PORT 已解封，流量统计已重置。"
                 echo "[$(date '+%T')] 周期重置并发送通知。"
             fi
         fi
@@ -119,12 +154,11 @@ run_monitor() {
         # 3. 封禁逻辑
         if (( $(echo "$USED_GB >= $QUOTA_GB" | bc -l) )); then
             if [ "$HAS_BLOCKED" = false ]; then
-                iptables -I INPUT -p tcp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-                iptables -I INPUT -p udp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
+                block_ports
                 HAS_BLOCKED=true
                 save_config
-                send_tg "🚫 **流量超标告警**%0A已使用：${USED_GB} GB%0A配额：${QUOTA_GB} GB%0A状态：已封锁端口 $BLOCK_PORT"
-                echo "[$(date '+%T')] 流量达标，已发送封锁通知。"
+                send_tg "🚫 流量超标告警%0A已使用：${USED_GB} GB%0A配额：${QUOTA_GB} GB%0A状态：已封锁端口 $BLOCK_PORT"
+                echo "[$(date '+%T')] 流量达标，已封锁端口 $BLOCK_PORT"
             fi
         fi
         sleep 30
@@ -139,7 +173,7 @@ case "$1" in
             load_config
             clear
             echo "==========================================="
-            echo " 流量配额精确监控 v1.0 | by：kook9527"
+            echo " 流量配额精确监控 v1.0.1 | by：kook9527"
             echo " 周期：每月 $CYCLE_DAY 日 $CYCLE_TIME 重置"
             echo "==========================================="
             
@@ -152,7 +186,12 @@ case "$1" in
             echo " 脚本状态：$ST_RUN 丨 TG通知：$TG_ENABLE"
             echo " 监控网卡：$NET_INTERFACE 丨 限制端口：$BLOCK_PORT"
             echo " 流量配额：$U_GB GB / $QUOTA_GB GB "
-            echo " 端口状态：$(iptables -L INPUT -n | grep -q "dpt:$BLOCK_PORT" && echo -e "\033[31m[已封禁]\033[0m" || echo -e "\033[32m[正常]\033[0m")"
+            echo -n " 端口状态："
+            if check_ports_blocked; then
+                echo -e "\033[31m[已封禁]\033[0m"
+            else
+                echo -e "\033[32m[正常]\033[0m"
+            fi
             echo "============================="
             echo "1) 安装并启动监控"
             echo "2) TG通知设置"
@@ -166,6 +205,10 @@ case "$1" in
 
             case "$choice" in
                 1)
+                    echo "提示：端口支持多个，用逗号分隔，如：55555,55556,55557"
+                    read -rp "请输入要限制的端口 [默认 $DEFAULT_PORT]: " USER_PORT
+                    BLOCK_PORT="${USER_PORT:-$DEFAULT_PORT}"
+                    
                     apt update && apt install -y jq vnstat bc curl
                     systemctl enable --now vnstat
                     vnstat -i "$NET_INTERFACE" --add >/dev/null 2>&1
@@ -211,22 +254,33 @@ EOF
                     send_tg "✅ TG 通知设置已更新！"
                     systemctl restart $SERVICE_NAME
                     ;;
-                3) # ...参数修改逻辑...
-                   ;;
+                3)
+                    echo "============================="
+                    echo "       修改运行参数"
+                    echo "============================="
+                    echo "提示：端口支持多个，用逗号分隔，如：55555,55556,55557"
+                    read -rp "1. 限制端口 [当前: $BLOCK_PORT]: " input; BLOCK_PORT=${input:-$BLOCK_PORT}
+                    read -rp "2. 流量配额 GB [当前: $QUOTA_GB]: " input; QUOTA_GB=${input:-$QUOTA_GB}
+                    read -rp "3. 重置日期(每月几号) [当前: $CYCLE_DAY]: " input; CYCLE_DAY=${input:-$CYCLE_DAY}
+                    read -rp "4. 重置时间(HH:MM:SS) [当前: $CYCLE_TIME]: " input; CYCLE_TIME=${input:-$CYCLE_TIME}
+                    read -rp "5. 监控网卡 [当前: $NET_INTERFACE]: " input; NET_INTERFACE=${input:-$NET_INTERFACE}
+                    save_config
+                    systemctl restart $SERVICE_NAME 2>/dev/null
+                    echo "✅ 参数已保存并应用。"
+                    ;;
                 4) journalctl -u $SERVICE_NAME -f -n 20 ;;
                 5)
-                    iptables -D INPUT -p tcp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-                    iptables -D INPUT -p udp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-                    HAS_BLOCKED=false; save_config
-                    echo "✅ 已手动解封。"
+                    unblock_ports
+                    HAS_BLOCKED=false
+                    save_config
+                    echo "✅ 已手动解封端口：$BLOCK_PORT"
                     ;;
                 6)
                     systemctl stop $SERVICE_NAME 2>/dev/null
                     systemctl disable $SERVICE_NAME 2>/dev/null
                     rm -f /etc/systemd/system/$SERVICE_NAME "$CONFIG_FILE"
-                    iptables -D INPUT -p tcp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-                    iptables -D INPUT -p udp --dport "$BLOCK_PORT" -j DROP 2>/dev/null
-                    echo "✅ 已清理。"
+                    unblock_ports
+                    echo "✅ 已清理所有配置和规则。"
                     ;;
                 0) exit 0 ;;
             esac
