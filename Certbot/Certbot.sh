@@ -39,7 +39,7 @@ done
 
 # 下载自动续签脚本
 if [ ! -f "auto_cert_renewal.sh" ]; then
-  curl -O https://raw.githubusercontent.com/Kook-9527/VPS_Plugin/main/auto_cert_renewal.sh
+  curl -O https://raw.githubusercontent.com/Kook-9527/VPS_Plugin/refs/heads/main/Certbot/auto_cert_renewal.sh
 fi
 
 # 赋予自动续签脚本可执行权限
