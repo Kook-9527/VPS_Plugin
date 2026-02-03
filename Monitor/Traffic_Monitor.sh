@@ -346,7 +346,7 @@ while true; do
     for val in "${history_window[@]}"; do total_bad=$((total_bad + val)); done
 
     if ! $port_blocked; then
-        echo "$(date '+%H:%M:%S') [监控] 下载:${rx_mbps}Mbps 上传:${tx_mbps}Mbps | 比率:${ratio}% | 次数:${total_bad}/${WINDOW_DURATION}"
+        echo "$(date '+%H:%M:%S') [监控] 下载:${rx_mbps}Mbps 上传:${tx_mbps}Mbps | 比率:${ratio}% | 次数:${total_bad}/${WINDOW_DURATION}s内"
         
         if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
             echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
