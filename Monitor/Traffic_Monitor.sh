@@ -108,15 +108,14 @@ setup_stats() {
     # 去除末尾的逗号
     proxy_ports=$(echo "$proxy_ports" | sed 's/,$//')
     
-    # 如果检测到代理端口，输出日志
-    if [ -n "$proxy_ports" ]; then
-        echo "$(date '+%H:%M:%S') [初始化] 检测到代理进程端口：$proxy_ports，将自动排除其流量"
-    fi
+    # 合并端口并去重
+    local all_ports="${TARGET_PORT},${proxy_ports}"
+    # 去重：将逗号分隔的端口转成数组，去重后再合并
+    local all_exclude_ports=$(echo "$all_ports" | tr ',' '\n' | sort -u | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
     
-    # 合并用户配置的端口和自动检测的端口
-    local all_exclude_ports="${TARGET_PORT}"
-    if [ -n "$proxy_ports" ]; then
-        all_exclude_ports="${all_exclude_ports},${proxy_ports}"
+    # 输出日志
+    if [ -n "$all_exclude_ports" ]; then
+        echo "$(date '+%H:%M:%S') [初始化] 排除代理端口流量：$all_exclude_ports"
     fi
     
     # IPv4清理
@@ -139,7 +138,7 @@ setup_stats() {
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
     
-    # 循环添加每个端口的规则（包括自动检测的代理端口）
+    # 循环添加每个端口的规则（已去重）
     IFS=',' read -ra PORTS <<< "$all_exclude_ports"
     for port in "${PORTS[@]}"; do
         port=$(echo "$port" | tr -d ' ')
@@ -545,7 +544,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "======================================"
-    echo " DDoS流量监控+阻断节点端口脚本 v1.0.9"
+    echo " DDoS流量监控+阻断节点端口脚本 v1.0.8"
     echo " by：kook9527"
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
