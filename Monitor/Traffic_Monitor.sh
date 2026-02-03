@@ -2,10 +2,19 @@
 # ============================================
 # DDoS流量监控脚本
 # 核心逻辑：
-#   1. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口。
-#   2. 每秒检测一次全网卡流量差值 (已排除业务端口流量)。
-#   3. 如果过去30秒内，有10次以上差值超过2Mbps，则判定为攻击。
-#   4. 触发阻断指定端口 (如 55555)。
+#   1. 自动检测 xray/sing-box 监听的所有端口
+#   2. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口
+#   3. 每秒检测一次全网卡流量差值（已自动排除代理端口流量）
+#   4. 如果过去30秒内，有10次以上差值超过阈值，则判定为攻击
+#   5. 触发阻断指定端口（如 55555）
+#   6. 阻断期间如检测到攻击，自动延长阻断时间
+#   7. 攻击停止30秒后自动解封
+# 
+# 特性：
+#   - 完全自动化：无需手动配置排除端口
+#   - 智能检测：自动发现所有代理端口
+#   - 多端口支持：阻断端口支持逗号分隔（如：55555,55556）
+#   - TG通知：阻断/解封实时推送
 # ============================================
 
 set -e
@@ -105,17 +114,16 @@ setup_stats() {
         proxy_ports="${proxy_ports}${singbox_ports}"
     fi
     
-    # 去除末尾的逗号
+    # 去除末尾的逗号并去重
     proxy_ports=$(echo "$proxy_ports" | sed 's/,$//')
-    
-    # 合并端口并去重
-    local all_ports="${TARGET_PORT},${proxy_ports}"
-    # 去重：将逗号分隔的端口转成数组，去重后再合并
-    local all_exclude_ports=$(echo "$all_ports" | tr ',' '\n' | sort -u | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
+    local all_exclude_ports=$(echo "$proxy_ports" | tr ',' '\n' | sort -u | grep -v '^$' | tr '\n' ',' | sed 's/,$//')
     
     # 输出日志
     if [ -n "$all_exclude_ports" ]; then
-        echo "$(date '+%H:%M:%S') [初始化] 排除代理端口流量：$all_exclude_ports"
+        echo "$(date '+%H:%M:%S') [初始化] 自动检测到代理端口：$all_exclude_ports"
+        echo "$(date '+%H:%M:%S') [初始化] 这些端口的流量将被完全排除，不计入DDoS检测"
+    else
+        echo "$(date '+%H:%M:%S') [初始化] 未检测到xray/sing-box进程"
     fi
     
     # IPv4清理
@@ -138,16 +146,18 @@ setup_stats() {
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
     
-    # 循环添加每个端口的规则（已去重）
-    IFS=',' read -ra PORTS <<< "$all_exclude_ports"
-    for port in "${PORTS[@]}"; do
-        port=$(echo "$port" | tr -d ' ')
-        [ -z "$port" ] && continue
-        iptables -A TRAFFIC_IN -p tcp --dport $port
-        iptables -A TRAFFIC_IN -p udp --dport $port
-        iptables -A TRAFFIC_OUT -p tcp --sport $port
-        iptables -A TRAFFIC_OUT -p udp --sport $port
-    done
+    # 只排除自动检测到的代理端口
+    if [ -n "$all_exclude_ports" ]; then
+        IFS=',' read -ra PORTS <<< "$all_exclude_ports"
+        for port in "${PORTS[@]}"; do
+            port=$(echo "$port" | tr -d ' ')
+            [ -z "$port" ] && continue
+            iptables -A TRAFFIC_IN -p tcp --dport $port
+            iptables -A TRAFFIC_IN -p udp --dport $port
+            iptables -A TRAFFIC_OUT -p tcp --sport $port
+            iptables -A TRAFFIC_OUT -p udp --sport $port
+        done
+    fi
     
     iptables -I INPUT 1 -j TRAFFIC_IN
     iptables -I OUTPUT 1 -j TRAFFIC_OUT
@@ -156,14 +166,17 @@ setup_stats() {
     ip6tables -N TRAFFIC_IN
     ip6tables -N TRAFFIC_OUT
     
-    for port in "${PORTS[@]}"; do
-        port=$(echo "$port" | tr -d ' ')
-        [ -z "$port" ] && continue
-        ip6tables -A TRAFFIC_IN -p tcp --dport $port
-        ip6tables -A TRAFFIC_IN -p udp --dport $port
-        ip6tables -A TRAFFIC_OUT -p tcp --sport $port
-        ip6tables -A TRAFFIC_OUT -p udp --sport $port
-    done
+    if [ -n "$all_exclude_ports" ]; then
+        IFS=',' read -ra PORTS <<< "$all_exclude_ports"
+        for port in "${PORTS[@]}"; do
+            port=$(echo "$port" | tr -d ' ')
+            [ -z "$port" ] && continue
+            ip6tables -A TRAFFIC_IN -p tcp --dport $port
+            ip6tables -A TRAFFIC_IN -p udp --dport $port
+            ip6tables -A TRAFFIC_OUT -p tcp --sport $port
+            ip6tables -A TRAFFIC_OUT -p udp --sport $port
+        done
+    fi
     
     ip6tables -I INPUT 1 -j TRAFFIC_IN
     ip6tables -I OUTPUT 1 -j TRAFFIC_OUT
@@ -415,7 +428,8 @@ modify_params() {
     echo "============================="
     echo "       修改运行参数"
     echo "============================="
-    echo "提示：端口支持多个，用逗号分隔，如：55555,55556,55557"
+    echo "提示：阻断端口支持多个，用逗号分隔，如：55555,55556"
+    echo "注意：流量排除是自动检测的，不需要手动配置"
     read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input; BLOCK_PORT=${input:-$BLOCK_PORT}
     read -rp "2. 出入口流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input; DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
     read -rp "3. 检测时间窗口：秒 [当前: $WINDOW_DURATION]: " input; WINDOW_DURATION=${input:-$WINDOW_DURATION}
@@ -430,7 +444,10 @@ modify_params() {
 install_monitor() {
     echo "📥 安装中..."
     install_dependencies
-    echo "提示：端口支持多个，用逗号分隔，如：55555,55556,55557"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "提示：阻断端口支持多个，用逗号分隔"
+    echo "说明：流量排除会自动检测 xray/sing-box 端口，无需手动配置"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     read -rp "请输入受到攻击时要阻断的端口 [默认 $BLOCK_PORT]: " USER_PORT
     BLOCK_PORT="${USER_PORT:-$BLOCK_PORT}"
     setup_tg
@@ -447,6 +464,12 @@ WantedBy=multi-user.target
 EOF
     systemctl daemon-reload; systemctl enable --now "$SERVICE_NAME"
     echo "✅ 监控已启动。"
+    sleep 2
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "查看自动检测到的代理端口："
+    journalctl -u traffic-monitor.service -n 20 --no-pager | grep "自动检测"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
 remove_monitor() {
@@ -544,14 +567,14 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "======================================"
-    echo " DDoS流量监控+阻断节点端口脚本 v1.0.8"
+    echo " DDoS流量监控+阻断节点端口脚本 v1.0.9"
     echo " by：kook9527"
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE  丨阻断端口：$BLOCK_PORT"
     echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps"
     echo "阻断逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
-    echo "业务隔离：已完全排除端口 $BLOCK_PORT 的流量（节点端口）"
+    echo "业务隔离：自动检测并排除 xray/sing-box 所有端口流量"
     echo "延时逻辑：阻断期内若检测到异常，自动延长阻断时间，直至差值 < ${DIFF_THRESHOLD}Mbps 才恢复正常"
     echo "======================================"
     echo "1) 安装并启动监控"
