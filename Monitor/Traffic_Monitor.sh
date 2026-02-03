@@ -319,10 +319,24 @@ while true; do
         tx_speed = (t2 - t1) * 8 / 1024 / 1024;
         diff = rx_speed - tx_speed;
         if (diff < 0) diff = 0;
-        printf "%.2f %.2f %.2f", rx_speed, tx_speed, diff
+        
+        # 计算上传/下载比率
+        if (rx_speed > 10) {
+            ratio = (tx_speed / rx_speed) * 100;
+        } else {
+            ratio = 100;
+        }
+        
+        printf "%.2f %.2f %.2f %.2f", rx_speed, tx_speed, diff, ratio
     }')
-    read rx_mbps tx_mbps diff_mbps <<< "$stats"
-    is_bad=$(awk -v diff="$diff_mbps" -v thresh="$DIFF_THRESHOLD" 'BEGIN {print (diff > thresh) ? 1 : 0}')
+    read rx_mbps tx_mbps diff_mbps ratio <<< "$stats"
+    
+    # 智能判断：基于比率 + 差值
+    is_bad=$(awk -v ratio="$ratio" -v rx="$rx_mbps" -v diff="$diff_mbps" 'BEGIN {
+        if (rx > 50 && ratio < 5) print 1;
+        else if (diff > 100) print 1;
+        else print 0;
+    }')
 
     history_window+=($is_bad)
     [ ${#history_window[@]} -gt $WINDOW_DURATION ] && history_window=("${history_window[@]:1}")
@@ -330,7 +344,7 @@ while true; do
     for val in "${history_window[@]}"; do total_bad=$((total_bad + val)); done
 
     if ! $port_blocked; then
-        echo "$(date '+%H:%M:%S') [监控] 流量:${rx_mbps}Mbps | 差值:${diff_mbps}Mbps | 次数:${total_bad}/${WINDOW_DURATION}"
+        echo "$(date '+%H:%M:%S') [监控] 下载:${rx_mbps}M 上传:${tx_mbps}M | 比率:${ratio}% | 次数:${total_bad}/${WINDOW_DURATION}"
         
         if [ "$total_bad" -ge "$TRIGGER_COUNT" ]; then
             echo "$(date '+%H:%M:%S') [告警] 检测到持续攻击，开始阻断端口 $TARGET_PORT"
@@ -567,7 +581,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "======================================"
-    echo " DDoS流量监控+阻断节点端口脚本 v1.0.9"
+    echo " DDoS流量监控+阻断节点端口脚本 v1.0.8"
     echo " by：kook9527"
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
