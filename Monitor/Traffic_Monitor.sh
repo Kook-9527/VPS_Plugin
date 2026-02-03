@@ -90,6 +90,35 @@ TARGET_PORT=$BLOCK_PORT
 INTERFACE="$NET_INTERFACE"
 
 setup_stats() {
+    # 自动检测xray和sing-box监听的端口
+    local proxy_ports=""
+    
+    # 检测xray监听的端口
+    if pgrep -x "xray" > /dev/null; then
+        local xray_ports=$(ss -tunlp | grep "xray" | awk '{print $5}' | grep -oP ':\K[0-9]+' | sort -u | tr '\n' ',')
+        proxy_ports="${proxy_ports}${xray_ports}"
+    fi
+    
+    # 检测sing-box监听的端口
+    if pgrep -x "sing-box" > /dev/null; then
+        local singbox_ports=$(ss -tunlp | grep "sing-box" | awk '{print $5}' | grep -oP ':\K[0-9]+' | sort -u | tr '\n' ',')
+        proxy_ports="${proxy_ports}${singbox_ports}"
+    fi
+    
+    # 去除末尾的逗号
+    proxy_ports=$(echo "$proxy_ports" | sed 's/,$//')
+    
+    # 如果检测到代理端口，输出日志
+    if [ -n "$proxy_ports" ]; then
+        echo "$(date '+%H:%M:%S') [初始化] 检测到代理进程端口：$proxy_ports，将自动排除其流量"
+    fi
+    
+    # 合并用户配置的端口和自动检测的端口
+    local all_exclude_ports="${TARGET_PORT}"
+    if [ -n "$proxy_ports" ]; then
+        all_exclude_ports="${all_exclude_ports},${proxy_ports}"
+    fi
+    
     # IPv4清理
     iptables -D INPUT -j TRAFFIC_IN 2>/dev/null || true
     iptables -D OUTPUT -j TRAFFIC_OUT 2>/dev/null || true
@@ -110,10 +139,11 @@ setup_stats() {
     iptables -N TRAFFIC_IN
     iptables -N TRAFFIC_OUT
     
-    # 循环添加每个端口的规则
-    IFS=',' read -ra PORTS <<< "$TARGET_PORT"
+    # 循环添加每个端口的规则（包括自动检测的代理端口）
+    IFS=',' read -ra PORTS <<< "$all_exclude_ports"
     for port in "${PORTS[@]}"; do
-        port=$(echo "$port" | tr -d ' ')  # 去除空格
+        port=$(echo "$port" | tr -d ' ')
+        [ -z "$port" ] && continue
         iptables -A TRAFFIC_IN -p tcp --dport $port
         iptables -A TRAFFIC_IN -p udp --dport $port
         iptables -A TRAFFIC_OUT -p tcp --sport $port
@@ -127,9 +157,9 @@ setup_stats() {
     ip6tables -N TRAFFIC_IN
     ip6tables -N TRAFFIC_OUT
     
-    # 循环添加每个端口的规则
     for port in "${PORTS[@]}"; do
         port=$(echo "$port" | tr -d ' ')
+        [ -z "$port" ] && continue
         ip6tables -A TRAFFIC_IN -p tcp --dport $port
         ip6tables -A TRAFFIC_IN -p udp --dport $port
         ip6tables -A TRAFFIC_OUT -p tcp --sport $port
@@ -138,6 +168,9 @@ setup_stats() {
     
     ip6tables -I INPUT 1 -j TRAFFIC_IN
     ip6tables -I OUTPUT 1 -j TRAFFIC_OUT
+    
+    # 保存实际排除的端口列表到全局变量
+    ACTUAL_EXCLUDE_PORTS="$all_exclude_ports"
 }
 
 send_tg() {
@@ -219,8 +252,8 @@ clean_rules() {
 get_pure_bytes() {
     local total=$(awk -v iface="$INTERFACE" '$1 ~ iface":" {print $2, $10}' /proc/net/dev | sed 's/:/ /g')
     
-    # 分割端口列表
-    IFS=',' read -ra PORTS <<< "$TARGET_PORT"
+    # 使用实际排除的端口列表（包括自动检测的）
+    IFS=',' read -ra PORTS <<< "$ACTUAL_EXCLUDE_PORTS"
     
     local p4_in=0
     local p4_out=0
@@ -230,10 +263,11 @@ get_pure_bytes() {
     # 循环统计每个端口的流量
     for port in "${PORTS[@]}"; do
         port=$(echo "$port" | tr -d ' ')
-        p4_in=$((p4_in + $(iptables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')))
-        p4_out=$((p4_out + $(iptables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$port" | awk '{sum+=$2} END {print sum+0}')))
-        p6_in=$((p6_in + $(ip6tables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep "dpt:$port" | awk '{sum+=$2} END {print sum+0}')))
-        p6_out=$((p6_out + $(ip6tables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep "sport:$port" | awk '{sum+=$2} END {print sum+0}')))
+        [ -z "$port" ] && continue
+        p4_in=$((p4_in + $(iptables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep -w "dpt:$port" | awk '{sum+=$2} END {print sum+0}')))
+        p4_out=$((p4_out + $(iptables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep -w "sport:$port" | awk '{sum+=$2} END {print sum+0}')))
+        p6_in=$((p6_in + $(ip6tables -L TRAFFIC_IN -n -v -x 2>/dev/null | grep -w "dpt:$port" | awk '{sum+=$2} END {print sum+0}')))
+        p6_out=$((p6_out + $(ip6tables -L TRAFFIC_OUT -n -v -x 2>/dev/null | grep -w "sport:$port" | awk '{sum+=$2} END {print sum+0}')))
     done
     
     read t_in t_out <<< "$total"
@@ -248,6 +282,7 @@ get_pure_bytes() {
 }
 
 setup_stats
+ACTUAL_EXCLUDE_PORTS=""
 port_blocked=false
 block_start_time=0
 block_end_time=0
@@ -510,7 +545,7 @@ while true; do
     status_run=$(systemctl is-active --quiet "$SERVICE_NAME" && echo "已运行" || echo "未运行")
     clear
     echo "======================================"
-    echo " DDoS流量监控+阻断节点端口脚本 v1.0.8"
+    echo " DDoS流量监控+阻断节点端口脚本 v1.0.9"
     echo " by：kook9527"
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
