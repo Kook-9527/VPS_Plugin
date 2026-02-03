@@ -5,7 +5,7 @@
 #   1. 自动检测 xray/sing-box 监听的所有端口
 #   2. 维护一个长度为 [WINDOW_DURATION] 秒的时间窗口
 #   3. 每秒检测一次全网卡流量差值（已自动排除代理端口流量）
-#   4. 如果过去30秒内，有10次以上差值超过阈值，则判定为攻击
+#   4. 如果过去30秒内，有10次以上异常流量，则判定为攻击
 #   5. 触发阻断指定端口（如 55555）
 #   6. 阻断期间如检测到攻击，自动延长阻断时间
 #   7. 攻击停止30秒后自动解封
@@ -23,7 +23,8 @@ set -e
 # 默认参数
 # =========================
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
-DIFF_THRESHOLD=2                   # 流量差值阈值 (Mbps)
+RATIO_THRESHOLD=5                  # 上传/下载比率阈值 (%) - 比率越低越可能是DDoS
+DL_THRESHOLD=5                     # 下载流量阈值 (Mbps)
 BLOCK_DURATION=300                 # 阻断时间 (秒)
 WINDOW_DURATION=30                 # 检测时间窗口 (秒)
 TRIGGER_COUNT=10                   # 窗口内触发次数阈值
@@ -51,7 +52,8 @@ TG_TOKEN=${TG_TOKEN:-""}
 TG_CHATID=${TG_CHATID:-""}
 SERVER_NAME=${SERVER_NAME:-"未命名服务器"}
 BLOCK_PORT=${BLOCK_PORT:-$DEFAULT_BLOCK_PORT}
-DIFF_THRESHOLD=${DIFF_THRESHOLD:-$DIFF_THRESHOLD}
+RATIO_THRESHOLD=${RATIO_THRESHOLD:-$RATIO_THRESHOLD}
+DL_THRESHOLD=${DL_THRESHOLD:-$DL_THRESHOLD}
 BLOCK_DURATION=${BLOCK_DURATION:-$BLOCK_DURATION}
 WINDOW_DURATION=${WINDOW_DURATION:-$WINDOW_DURATION}
 TRIGGER_COUNT=${TRIGGER_COUNT:-$TRIGGER_COUNT}
@@ -75,7 +77,8 @@ TG_TOKEN="$TG_TOKEN"
 TG_CHATID="$TG_CHATID"
 SERVER_NAME="$SERVER_NAME"
 BLOCK_PORT="$BLOCK_PORT"
-DIFF_THRESHOLD="$DIFF_THRESHOLD"
+RATIO_THRESHOLD="$RATIO_THRESHOLD"
+DL_THRESHOLD="$DL_THRESHOLD"
 BLOCK_DURATION="$BLOCK_DURATION"
 WINDOW_DURATION="$WINDOW_DURATION"
 TRIGGER_COUNT="$TRIGGER_COUNT"
@@ -331,10 +334,9 @@ while true; do
     }')
     read rx_mbps tx_mbps diff_mbps ratio <<< "$stats"
     
-    # 智能判断：基于比率 + 差值
-    is_bad=$(awk -v ratio="$ratio" -v rx="$rx_mbps" -v diff="$diff_mbps" 'BEGIN {
-        if (rx > 50 && ratio < 5) print 1;
-        else if (diff > 100) print 1;
+    # 智能判断：基于比率 + 下载阈值
+    is_bad=$(awk -v ratio="$ratio" -v rx="$rx_mbps" -v ratio_threshold="$RATIO_THRESHOLD" -v dl_threshold="$DL_THRESHOLD" 'BEGIN {
+        if (rx > dl_threshold && ratio < ratio_threshold) print 1;
         else print 0;
     }')
 
@@ -388,12 +390,12 @@ while true; do
             if [ "$remaining" -le 30 ]; then
                 block_end_time=$((block_end_time + 30))
                 remaining=$((block_end_time - now))
-                echo "$(date '+%H:%M:%S') 最后30秒内检测到攻击，延长30秒 | 已阻断:${elapsed}s | 新剩余:${remaining}s"
+                echo "$(date '+%H:%M:%S') 最后30秒内检测到攻击，延长30秒 | 比率:${ratio}% | 已阻断:${elapsed}s | 新剩余:${remaining}s"
             else
-                echo "$(date '+%H:%M:%S') 检测到异常流量 | 差值:${diff_mbps}Mbps | 已阻断:${elapsed}s | 剩余:${remaining}s"
+                echo "$(date '+%H:%M:%S') 检测到异常流量 | 比率:${ratio}% | 已阻断:${elapsed}s | 剩余:${remaining}s"
             fi
         else
-            echo "$(date '+%H:%M:%S') [监控] 流量:${rx_mbps}Mbps | 差值:${diff_mbps}Mbps | 阻断剩余:${remaining}s | 距上次攻击:${time_since_last}s"
+            echo "$(date '+%H:%M:%S') [监控] 流量:${rx_mbps}Mbps | 比率:${ratio}% | 阻断剩余:${remaining}s | 距上次攻击:${time_since_last}s"
         fi
     
         # 解封条件：当前时间超过结束时间 且 距上次攻击超过30秒
@@ -445,11 +447,12 @@ modify_params() {
     echo "提示：阻断端口支持多个，用逗号分隔，如：55555,55556"
     echo "注意：流量排除是自动检测的，不需要手动配置"
     read -rp "1. 目标阻断端口 [当前: $BLOCK_PORT]: " input; BLOCK_PORT=${input:-$BLOCK_PORT}
-    read -rp "2. 出入口流量差值阈值 Mbps [当前: $DIFF_THRESHOLD]: " input; DIFF_THRESHOLD=${input:-$DIFF_THRESHOLD}
-    read -rp "3. 检测时间窗口：秒 [当前: $WINDOW_DURATION]: " input; WINDOW_DURATION=${input:-$WINDOW_DURATION}
-    read -rp "4. 窗口内触发次数 [当前: $TRIGGER_COUNT]: " input; TRIGGER_COUNT=${input:-$TRIGGER_COUNT}
-    read -rp "5. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input; BLOCK_DURATION=${input:-$BLOCK_DURATION}
-    read -rp "6. 监控网卡接口 [当前: $NET_INTERFACE]: " input; NET_INTERFACE=${input:-$NET_INTERFACE}
+    read -rp "2. 下载流量阈值 Mbps [当前: $DL_THRESHOLD]: " input; DL_THRESHOLD=${input:-$DL_THRESHOLD}
+    read -rp "3. 上传/下载比率阈值 % [当前: $RATIO_THRESHOLD]: " input; RATIO_THRESHOLD=${input:-$RATIO_THRESHOLD}
+    read -rp "4. 检测时间窗口：秒 [当前: $WINDOW_DURATION]: " input; WINDOW_DURATION=${input:-$WINDOW_DURATION}
+    read -rp "5. 窗口内触发次数 [当前: $TRIGGER_COUNT]: " input; TRIGGER_COUNT=${input:-$TRIGGER_COUNT}
+    read -rp "6. 阻断持续时间：秒 [当前: $BLOCK_DURATION]: " input; BLOCK_DURATION=${input:-$BLOCK_DURATION}
+    read -rp "7. 监控网卡接口 [当前: $NET_INTERFACE]: " input; NET_INTERFACE=${input:-$NET_INTERFACE}
     save_config; create_monitor_script
     systemctl restart "$SERVICE_NAME" 2>/dev/null || true
     echo "✅ 参数已保存并应用。"
@@ -586,10 +589,10 @@ while true; do
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE  丨阻断端口：$BLOCK_PORT"
-    echo "当前阈值：差值 > ${DIFF_THRESHOLD}Mbps"
+    echo "当前阈值：下载 > ${DL_THRESHOLD}Mbps 且 比率 < ${RATIO_THRESHOLD}%"
     echo "阻断逻辑：${WINDOW_DURATION}秒窗口内出现 > ${TRIGGER_COUNT}次异常"
     echo "业务隔离：自动检测并排除 xray/sing-box 所有端口流量"
-    echo "延时逻辑：阻断期内若检测到异常，自动延长阻断时间，直至差值 < ${DIFF_THRESHOLD}Mbps 才恢复正常"
+    echo "延时逻辑：阻断期内若检测到异常，自动延长阻断时间，直至比率恢复正常"
     echo "======================================"
     echo "1) 安装并启动监控"
     echo "2) TG通知设置"
