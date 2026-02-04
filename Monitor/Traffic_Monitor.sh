@@ -23,7 +23,7 @@ set -e
 # 默认参数
 # =========================
 DEFAULT_BLOCK_PORT=55555           # 要阻断的目标端口
-RATIO_THRESHOLD=5                  # 上传/下载比率阈值 (%) - 比率越低越可能是DDoS
+RATIO_THRESHOLD=10                 # 上传/下载比率阈值 (%) - 比率越低越可能是DDoS
 DL_THRESHOLD=2                     # 下载流量阈值 (Mbps)
 BLOCK_DURATION=300                 # 阻断时间 (秒)
 WINDOW_DURATION=30                 # 检测时间窗口 (秒)
