@@ -324,10 +324,10 @@ while true; do
         if (diff < 0) diff = 0;
         
         # 计算上传/下载比率
-        if (rx_speed > 10) {
+        if (rx_speed >= 0.01) {  # 只要有很小的下载流量就计算比率
             ratio = (tx_speed / rx_speed) * 100;
         } else {
-            ratio = 100;
+            ratio = 100;  # 只有在几乎没有下载时才设为100%
         }
         
         printf "%.2f %.2f %.2f %.2f", rx_speed, tx_speed, diff, ratio
