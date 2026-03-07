@@ -21,7 +21,7 @@ readonly VERSION="3.4.9"
 readonly AUTHOR="Chil30"
 readonly REPO_URL="https://github.com/Chil30/vless-all-in-one"
 readonly SCRIPT_REPO="Chil30/vless-all-in-one"
-readonly SCRIPT_RAW_URL="https://raw.githubusercontent.com/Chil30/vless-all-in-one/main/vless-server.sh"
+readonly SCRIPT_RAW_URL="https://raw.githubusercontent.com/Kook-9527/VPS_Plugin/refs/heads/main/vless-server.sh"
 readonly CFG="/etc/vless-reality"
 readonly ACME_DEFAULT_EMAIL="acme@vaio.com"
 
