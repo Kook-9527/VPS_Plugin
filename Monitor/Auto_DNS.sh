@@ -83,12 +83,14 @@ RESOLV_CONF="/etc/resolv.conf"
 TEMP_FILE=$(mktemp)
 LOGFILE="/var/log/Auto_DNS.log"
 PING_COUNT=5
+PING_INTERVAL=0.2
+PING_TIMEOUT=2
 DIG_SAMPLES=2
-DIG_TIMEOUT=5
+DIG_TIMEOUT=3
 
 log() {
   local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
-  echo "$msg" >> "$LOGFILE"
+  echo "$msg" | tee -a "$LOGFILE"
 }
 
 # ---------- 解锁 ----------
@@ -96,16 +98,19 @@ log() {
 
 # ---------- 开始测速 ----------
 log "=== Auto_DNS 检测开始 ==="
+log ""
 
 for dns in "${DNS_SERVERS[@]}"; do
-  # --- ① Ping 测试 (网络延迟) ---
-  ping_result=$(ping -c "$PING_COUNT" -i 0.2 -W 2 "$dns" 2>/dev/null)
+  log "⏳ 测试 ${dns} ..."
+
+  # --- ① Ping 测试 ---
+  ping_result=$(ping -c "$PING_COUNT" -i "$PING_INTERVAL" -W "$PING_TIMEOUT" "$dns" 2>/dev/null)
   ping_avg=$(echo "$ping_result" | grep 'rtt' | cut -d'/' -f5)
-  
-  # 丢包惩罚
   loss=$(echo "$ping_result" | grep -oP '\d+(?=% packet loss)' || echo "100")
+
   if [ -z "$ping_avg" ] || [ "$loss" -ge 50 ] 2>/dev/null; then
-    log "  ${dns} → ping 失败或丢包>50%，跳过"
+    log "  ❌ ping 失败或丢包>50%，跳过"
+    log ""
     continue
   fi
   ping_int=${ping_avg%.*}
@@ -113,6 +118,8 @@ for dns in "${DNS_SERVERS[@]}"; do
   # --- ② DNS 解析测试 ---
   total=0
   count=0
+  dig_ok=0
+  dig_fail=0
   for domain in "${BENCHMARK_DOMAINS[@]}"; do
     for ((i=0; i<DIG_SAMPLES; i++)); do
       r=$RANDOM
@@ -120,20 +127,28 @@ for dns in "${DNS_SERVERS[@]}"; do
       if [ -n "$t" ] && [ "$t" -lt 5000 ] 2>/dev/null; then
         total=$((total + t))
         count=$((count + 1))
+        dig_ok=$((dig_ok + 1))
+      else
+        dig_fail=$((dig_fail + 1))
       fi
     done
   done
 
   if [ "$count" -eq 0 ]; then
-    log "  ${dns} → ping=${ping_avg}ms dig=失败"
+    log "  ❌ dig 全部超时 (${dig_fail}/${DIG_SAMPLES}次失败)"
+    log ""
     continue
   fi
   dig_avg=$((total / count))
 
-  # --- ③ 综合评分 (ping*30% + dig*70%) ---
+  # --- ③ 综合评分 ---
   combined=$(( (ping_int * 3 + dig_avg * 7) / 10 ))
   echo "$combined|$ping_avg|$dig_avg|$dns" >> "$TEMP_FILE"
-  log "  ${dns} → ping=${ping_avg}ms dig=${dig_avg}ms 综合=${combined}"
+
+  fail_info=""
+  [ "$dig_fail" -gt 0 ] && fail_info=" (${dig_fail}次超时)"
+  log "  ✅ ping=${ping_avg}ms  dig=${dig_avg}ms${fail_info}  综合=${combined}"
+  log ""
 done
 
 # ---------- 排序取前2 ----------
@@ -141,11 +156,21 @@ SORTED=$(sort -n "$TEMP_FILE")
 DNS1=$(echo "$SORTED" | sed -n '1p' | cut -d'|' -f4)
 DNS2=$(echo "$SORTED" | sed -n '2p' | cut -d'|' -f4)
 
+SCORE1=$(echo "$SORTED" | sed -n '1p' | cut -d'|' -f1)
+SCORE2=$(echo "$SORTED" | sed -n '2p' | cut -d'|' -f1)
+PING1=$(echo "$SORTED" | sed -n '1p' | cut -d'|' -f2)
+PING2=$(echo "$SORTED" | sed -n '2p' | cut -d'|' -f2)
+DIG1=$(echo "$SORTED" | sed -n '1p' | cut -d'|' -f3)
+DIG2=$(echo "$SORTED" | sed -n '2p' | cut -d'|' -f3)
+
 rm -f "$TEMP_FILE"
 
 # ---------- 写入 resolv.conf ----------
+log "===== = 综合排名 Top 2 ===== ====="
+log "  🥇 ${DNS1} (综合${SCORE1}, ping=${PING1}ms dig=${DIG1}ms)"
+log "  🥈 ${DNS2} (综合${SCORE2}, ping=${PING2}ms dig=${DIG2}ms)"
+
 if [ -n "$DNS1" ] && [ -n "$DNS2" ]; then
-  # 处理软链接（如 Ubuntu systemd-resolved）
   if [ -L "$RESOLV_CONF" ]; then
     rm -f "$RESOLV_CONF"
   fi
@@ -160,7 +185,6 @@ CONF
 
   log "✅ 已更新: ${DNS1} ${DNS2}"
 else
-  # 保底
   if [ ! -s "$RESOLV_CONF" ]; then
     echo "nameserver 8.8.8.8" > "$RESOLV_CONF"
     echo "nameserver 1.1.1.1" >> "$RESOLV_CONF"
@@ -189,9 +213,21 @@ fi
 # ---------- 6. 首次运行 ----------
 echo "🏃 正在立即运行脚本进行首次优选..."
 echo "------------------------------------------------"
-bash "$SCRIPT_PATH"
+# 给核心脚本加超时保护 (10分钟)
+timeout 600 bash "$SCRIPT_PATH"
+RET=$?
+if [ $RET -eq 124 ]; then
+  echo ""
+  echo "⚠️  首次运行超过10分钟被终止，请检查网络连通性"
+  echo "   查看日志: tail -f $LOG_FILE"
+elif [ $RET -ne 0 ]; then
+  echo ""
+  echo "⚠️  首次运行异常退出 (code=$RET)"
+  echo "   查看日志: tail -f $LOG_FILE"
+fi
 
 # 输出最终结果
+echo ""
 echo "================================================"
 echo "📋 当前 /etc/resolv.conf:"
 echo "------------------------------------------------"
