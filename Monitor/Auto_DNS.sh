@@ -147,7 +147,7 @@ for dns in "${DNS_SERVERS[@]}"; do
 
   fail_info=""
   [ "$dig_fail" -gt 0 ] && fail_info=" (${dig_fail}次超时)"
-  log "  ✅ ping=${ping_avg}ms  dig=${dig_avg}ms${fail_info}  综合=${combined}"
+  log "  ✅ ping=${ping_avg}ms | dig=${dig_avg}ms${fail_info} | 综合=${combined}ms"
   log ""
 done
 
@@ -167,8 +167,8 @@ rm -f "$TEMP_FILE"
 
 # ---------- 写入 resolv.conf ----------
 log "===== = 综合排名 Top 2 ===== ====="
-log "  🥇 ${DNS1} (综合${SCORE1}, ping=${PING1}ms dig=${DIG1}ms)"
-log "  🥈 ${DNS2} (综合${SCORE2}, ping=${PING2}ms dig=${DIG2}ms)"
+log "  🥇 ${DNS1} — 综合 ${SCORE1}ms (ping=${PING1}ms dig=${DIG1}ms)"
+log "  🥈 ${DNS2} — 综合 ${SCORE2}ms (ping=${PING2}ms dig=${DIG2}ms)"
 
 if [ -n "$DNS1" ] && [ -n "$DNS2" ]; then
   if [ -L "$RESOLV_CONF" ]; then
