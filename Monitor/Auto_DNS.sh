@@ -2,93 +2,155 @@
 
 # ==================================================
 # Auto_DNS.sh - 一键自动 DNS 优选与锁定工具
-# 功能：自动检测最快 DNS，更新 /etc/resolv.conf 并锁定
+# 功能：自动检测最快 DNS (综合 ping+解析速度)，
+#       更新 /etc/resolv.conf 并锁定
 # ==================================================
 
-# 1. 检查 Root 权限
+# ---------- 1. Root 检查 ----------
 if [[ $EUID -ne 0 ]]; then
-   echo "❌ 错误：请使用 root 权限运行此脚本 (sudo bash ...)" 
-   exit 1
+  echo "❌ 错误：请使用 root 权限运行此脚本 (sudo bash ...)"
+  exit 1
 fi
 
+# ---------- 安装路径 ----------
 SCRIPT_PATH="/usr/local/bin/Auto_DNS.sh"
 
+# ---------- 海外基准测试域名 (只用海外站) ----------
+BENCHMARK_DOMAINS=(
+  "google.com"
+  "youtube.com"
+  "github.com"
+  "reddit.com"
+  "stackoverflow.com"
+  "twitter.com"
+  "wikipedia.org"
+)
+
+# ---------- 日志 ----------
+LOG_FILE="/var/log/Auto_DNS.log"
+
+log() {
+  local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  echo "$msg"
+  echo "$msg" >> "$LOG_FILE"
+}
+
+# ==================================================
 echo "================================================"
 echo "🚀 开始部署 Auto_DNS 服务..."
 echo "================================================"
 
-# 2. 安装必要的依赖 (bc 和 chattr 工具)
+# ---------- 2. 依赖检查 & 安装 ----------
 echo "📦 检查并安装依赖工具..."
 if command -v apt-get >/dev/null; then
-    apt-get update -y >/dev/null 2>&1
-    apt-get install -y bc e2fsprogs iputils-ping >/dev/null 2>&1
+  apt-get update -y >/dev/null 2>&1
+  apt-get install -y bc e2fsprogs iputils-ping dnsutils >/dev/null 2>&1
 elif command -v yum >/dev/null; then
-    yum install -y bc e2fsprogs iputils >/dev/null 2>&1
+  yum install -y bc e2fsprogs iputils bind-utils >/dev/null 2>&1
 else
-    echo "⚠️ 警告：未检测到 apt 或 yum，请确保系统已安装 'bc' 和 'ping'。"
+  echo "⚠️ 警告：未检测到 apt 或 yum，请确保已安装 bc/ping/dig"
 fi
 
-# 3. 生成核心逻辑脚本 Auto_DNS.sh
-echo "📝 正在生成核心脚本: $SCRIPT_PATH"
+# ---------- 3. 生成核心脚本 ----------
+echo "📝 生成核心脚本: $SCRIPT_PATH"
 
-cat << 'EOF' > "$SCRIPT_PATH"
+cat << 'EOFMARKER' > "$SCRIPT_PATH"
 #!/bin/bash
-
 # ==========================================
 # Auto_DNS.sh 核心逻辑
+# 综合 ping 延迟 + dig 解析速度 评分
 # ==========================================
 
-# 待测速 DNS 列表 (包含 Google, CF, Quad9, OpenDNS, AliDNS, DNSPod)
+# ---------- 配置 ----------
 DNS_SERVERS=(
-    "8.8.8.8" "8.8.4.4"
-    "1.1.1.1" "1.0.0.1"
-    "9.9.9.9" "149.112.112.112"
-    "208.67.222.222" "208.67.220.220"
-    "223.5.5.5" "223.6.6.6"
-    "119.29.29.29"
+  "1.1.1.1" "1.0.0.1"
+  "8.8.8.8" "8.8.4.4"
+  "9.9.9.9" "149.112.112.112"
+  "208.67.222.222" "208.67.220.220"
+)
+
+BENCHMARK_DOMAINS=(
+  "google.com"
+  "youtube.com"
+  "github.com"
+  "reddit.com"
+  "stackoverflow.com"
+  "twitter.com"
+  "wikipedia.org"
 )
 
 RESOLV_CONF="/etc/resolv.conf"
 TEMP_FILE=$(mktemp)
+LOGFILE="/var/log/Auto_DNS.log"
+PING_COUNT=5
+DIG_SAMPLES=2
+DIG_TIMEOUT=5
 
-# --- 步骤 1: 解锁文件 ---
-# 必须先解锁，否则无法写入新 DNS
-if [ -f "$RESOLV_CONF" ]; then
-    chattr -i "$RESOLV_CONF" 2>/dev/null
-fi
+log() {
+  local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+  echo "$msg" >> "$LOGFILE"
+}
 
-# --- 步骤 2: 测速 ---
-# echo "正在测试 DNS 延迟..."
+# ---------- 解锁 ----------
+[ -f "$RESOLV_CONF" ] && chattr -i "$RESOLV_CONF" 2>/dev/null
+
+# ---------- 开始测速 ----------
+log "=== Auto_DNS 检测开始 ==="
 
 for dns in "${DNS_SERVERS[@]}"; do
-    # -c 10: 10次测试
-    # -i 0.2: 间隔0.2秒
-    # -W 1: 超时1秒
-    avg=$(ping -c 10 -i 0.2 -W 1 $dns 2>/dev/null | grep 'rtt' | cut -d"/" -f5)
-    
-    if [ -n "$avg" ]; then
-        echo "$avg $dns" >> "$TEMP_FILE"
-    fi
+  # --- ① Ping 测试 (网络延迟) ---
+  ping_result=$(ping -c "$PING_COUNT" -i 0.2 -W 2 "$dns" 2>/dev/null)
+  ping_avg=$(echo "$ping_result" | grep 'rtt' | cut -d'/' -f5)
+  
+  # 丢包惩罚
+  loss=$(echo "$ping_result" | grep -oP '\d+(?=% packet loss)' || echo "100")
+  if [ -z "$ping_avg" ] || [ "$loss" -ge 50 ] 2>/dev/null; then
+    log "  ${dns} → ping 失败或丢包>50%，跳过"
+    continue
+  fi
+  ping_int=${ping_avg%.*}
+
+  # --- ② DNS 解析测试 ---
+  total=0
+  count=0
+  for domain in "${BENCHMARK_DOMAINS[@]}"; do
+    for ((i=0; i<DIG_SAMPLES; i++)); do
+      r=$RANDOM
+      t=$(dig @"$dns" "$r.$domain" +stats +time="$DIG_TIMEOUT" +tries=1 2>/dev/null | grep "Query time" | grep -oP '\d+')
+      if [ -n "$t" ] && [ "$t" -lt 5000 ] 2>/dev/null; then
+        total=$((total + t))
+        count=$((count + 1))
+      fi
+    done
+  done
+
+  if [ "$count" -eq 0 ]; then
+    log "  ${dns} → ping=${ping_avg}ms dig=失败"
+    continue
+  fi
+  dig_avg=$((total / count))
+
+  # --- ③ 综合评分 (ping*30% + dig*70%) ---
+  combined=$(( (ping_int * 3 + dig_avg * 7) / 10 ))
+  echo "$combined|$ping_avg|$dig_avg|$dns" >> "$TEMP_FILE"
+  log "  ${dns} → ping=${ping_avg}ms dig=${dig_avg}ms 综合=${combined}"
 done
 
-# --- 步骤 3: 排序并取前两名 ---
-SORTED_DNS=$(sort -n "$TEMP_FILE" | awk '{print $2}')
-DNS1=$(echo "$SORTED_DNS" | sed -n '1p')
-DNS2=$(echo "$SORTED_DNS" | sed -n '2p')
+# ---------- 排序取前2 ----------
+SORTED=$(sort -n "$TEMP_FILE")
+DNS1=$(echo "$SORTED" | sed -n '1p' | cut -d'|' -f4)
+DNS2=$(echo "$SORTED" | sed -n '2p' | cut -d'|' -f4)
 
-# 删除临时文件
-rm "$TEMP_FILE"
+rm -f "$TEMP_FILE"
 
-# --- 步骤 4: 写入配置 ---
+# ---------- 写入 resolv.conf ----------
 if [ -n "$DNS1" ] && [ -n "$DNS2" ]; then
-    
-    # 如果 resolv.conf 是软链接(常见于Ubuntu)，删除它并创建静态文件
-    # 这样可以彻底防止 systemd-resolved 覆盖配置
-    if [ -L "$RESOLV_CONF" ]; then
-        rm "$RESOLV_CONF"
-    fi
+  # 处理软链接（如 Ubuntu systemd-resolved）
+  if [ -L "$RESOLV_CONF" ]; then
+    rm -f "$RESOLV_CONF"
+  fi
 
-    cat << CONF > "$RESOLV_CONF"
+  cat << CONF > "$RESOLV_CONF"
 # Generated by Auto_DNS.sh
 # Updated at: $(date)
 nameserver $DNS1
@@ -96,45 +158,50 @@ nameserver $DNS2
 options timeout:2 attempts:3 rotate
 CONF
 
+  log "✅ 已更新: ${DNS1} ${DNS2}"
 else
-    # 保底措施：如果测速全失败，使用 Google DNS
-    if [ ! -s "$RESOLV_CONF" ]; then
-        echo "nameserver 8.8.8.8" > "$RESOLV_CONF"
-        echo "nameserver 1.1.1.1" >> "$RESOLV_CONF"
-    fi
+  # 保底
+  if [ ! -s "$RESOLV_CONF" ]; then
+    echo "nameserver 8.8.8.8" > "$RESOLV_CONF"
+    echo "nameserver 1.1.1.1" >> "$RESOLV_CONF"
+    log "⚠️ 测速失败，使用保底 DNS"
+  fi
 fi
 
-# --- 步骤 5: 重新锁定文件 ---
-# 锁定后，其他程序无法修改此文件
+# ---------- 锁定 ----------
 chattr +i "$RESOLV_CONF" 2>/dev/null
+log "=== Auto_DNS 检测完成 ==="
 
-EOF
+EOFMARKER
 
-# 4. 赋予执行权限
+# ---------- 4. 赋予执行权限 ----------
 chmod +x "$SCRIPT_PATH"
 
-# 5. 设置 Crontab 定时任务 (每小时运行一次)
+# ---------- 5. Cron (每小时) ----------
 CRON_CMD="0 * * * * $SCRIPT_PATH >/dev/null 2>&1"
-
-# 检查是否存在，不存在则添加
 if ! crontab -l 2>/dev/null | grep -q "Auto_DNS.sh"; then
-    (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
-    echo "⏰ 定时任务已添加：每小时自动运行一次。"
+  (crontab -l 2>/dev/null; echo "$CRON_CMD") | crontab -
+  echo "⏰ 定时任务已添加：每小时自动运行一次。"
 else
-    echo "✅ 定时任务已存在，跳过添加。"
+  echo "✅ 定时任务已存在，跳过添加。"
 fi
 
-# 6. 立即运行一次验证效果
+# ---------- 6. 首次运行 ----------
 echo "🏃 正在立即运行脚本进行首次优选..."
 echo "------------------------------------------------"
 bash "$SCRIPT_PATH"
 
-# 验证结果
-echo "✅ 运行完成！当前 /etc/resolv.conf 内容如下："
+# 输出最终结果
+echo "================================================"
+echo "📋 当前 /etc/resolv.conf:"
 echo "------------------------------------------------"
 cat /etc/resolv.conf
 echo "------------------------------------------------"
-echo "🔒 文件属性 (查看是否有 'i' 标志):"
-lsattr /etc/resolv.conf 2>/dev/null || echo "lsattr 未安装，无法查看属性，但锁定功能已生效。"
+echo "🔒 文件属性:"
+lsattr /etc/resolv.conf 2>/dev/null || echo "   (lsattr 不可用，锁定已执行)"
 echo "================================================"
-echo "🎉 部署完成！脚本路径: $SCRIPT_PATH"
+echo "🎉 部署完成！"
+echo "   脚本: $SCRIPT_PATH"
+echo "   日志: tail -f $LOG_FILE"
+echo "   手动运行: bash $SCRIPT_PATH"
+echo "================================================"
