@@ -465,7 +465,7 @@ install_monitor() {
     echo "提示：阻断端口支持多个，用逗号分隔"
     echo "说明：流量排除会自动检测 xray/sing-box 端口，无需手动配置"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    read -rp "请输入受到攻击时要阻断的端口 [默认 $BLOCK_PORT]: " USER_PORT
+    read -rp "请输入受到攻击时要阻断的端口 [默认自动检测]: " USER_PORT
     BLOCK_PORT="${USER_PORT:-$BLOCK_PORT}"
     setup_tg
     create_monitor_script
