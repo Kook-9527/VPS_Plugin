@@ -544,8 +544,8 @@ show_menu() {
   clear 2>/dev/null || true
   echo ""
   echo -e "${CYAN}  ╔══════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}  ║         Hysteria2 管理脚本            ║${NC}"
-  echo -e "${CYAN}  ║           by：kook9527               ║${NC}"
+  echo -e "${CYAN}  ║        Hysteria 2 管理脚本            ║${NC}"
+  echo -e "${CYAN}  ║          by：Kook-9527               ║${NC}"
   echo -e "${CYAN}  ╚══════════════════════════════════════╝${NC}"
   echo ""
   echo -e "  ${BOLD}状态:${NC} $installed"
