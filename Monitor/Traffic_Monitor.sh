@@ -370,7 +370,7 @@ while true; do
             echo "$(date '+%H:%M:%S') [阻断] 端口已封锁，开始倒计时 ${BLOCK_DURATION}s"
         fi
     else
-        now=$(date +%s)
+        现在=$(date +%s)
     
         # 使用结束时间而不是持续时间
         if [ "$block_end_time" -eq 0 ]; then
@@ -585,7 +585,7 @@ while true; do
     clear
     echo "======================================"
     echo " DDoS流量监控+阻断节点端口脚本 v1.0.9"
-    echo " by：kook9527"
+    echo " by：Kook9527"
     echo "======================================"
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控网卡：$NET_INTERFACE  丨阻断端口：$BLOCK_PORT"
