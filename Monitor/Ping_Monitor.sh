@@ -164,7 +164,7 @@ while true; do
             block_port
         fi
     else
-        now=\$(date +%s)
+        现在=\$(date +%s)
         elapsed=\$((now - block_start_time))
         if [ "\$elapsed" -ge "\$BLOCK_DURATION" ]; then
             unblock_port
@@ -327,7 +327,7 @@ while true; do
 
     clear
     echo "=============================================="
-    echo " Ping Monitor 管理脚本 v1.0.2 | by：kook9527"
+    echo " Ping Monitor 管理脚本 v1.0.2 | by：Kook9527"
     echo "=============================================="
     echo "脚本状态：$status_run丨TG 通知 ：$TG_ENABLE"
     echo "监控端口：$PORT丨最近阻断：$last_block"
