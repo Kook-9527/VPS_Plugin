@@ -642,12 +642,17 @@ show_menu() {
 
 # ==================== 设置 hy2 快捷命令 ====================
 setup_shortcut() {
+  # 通过管道运行时跳过快捷命令设置（如 bash <(curl ...)）
+  [[ ! -f "$0" ]] && return
+  
   local script_path
   script_path="$(readlink -f "$0")"
   
+  # 确保是真实文件而非管道
+  [[ ! -f "$script_path" ]] && return
+  
   if [[ ! -L /usr/local/bin/hy2 ]] || [[ "$(readlink /usr/local/bin/hy2)" != "$script_path" ]]; then
     ln -sf "$script_path" /usr/local/bin/hy2
-    chmod +x "$script_path"
     info "快捷命令已设置：输入 hy2 即可进入脚本"
   fi
 }
