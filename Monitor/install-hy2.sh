@@ -31,8 +31,8 @@ fi
 info()  { echo -e "${GREEN}[✓]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[✗]${NC} $1"; }
-header(){ echo -e "\n${CYAN}══════════════════════════════════════${NC}\n${BOLD}$1${NC}\n${CYAN}──────────────────────────────────────${NC}"; }
-sep()   { echo -e "${CYAN}──────────────────────────────────────${NC}"; }
+header(){ echo -e "\n${BOLD}$1${NC}"; }
+sep()   { echo -e "======================================"; }
 
 # ---- root 检测 ----
 check_root() {
@@ -246,7 +246,7 @@ EOF
   local svc="/etc/systemd/system/$HY_SERVICE.service"
   if [[ -f "$svc" ]]; then
     sed -i 's/^User=.*/User=root/' "$svc"
-    sed -i 's|^WorkingDirectory=.*|WorkingDirectory='"$HY_SERVER_DIR"'|' "$svc"
+    sed -i 's|^WorkingDirectory=.*|WorkingDirectory='\"$HY_SERVER_DIR\"'|' "$svc"
     grep -q 'CAP_NET_ADMIN' "$svc" 2>/dev/null || sed -i '/CapabilityBoundingSet/s/$/ CAP_NET_ADMIN/' "$svc"
     grep -q 'CAP_NET_ADMIN' "$svc" 2>/dev/null || sed -i '/AmbientCapabilities/s/$/ CAP_NET_ADMIN/' "$svc"
     systemctl daemon-reload
@@ -494,6 +494,57 @@ show_node_info() {
   fi
 }
 
+# ---- 更新 Hysteria ----
+update_hysteria() {
+  header "🔄 更新 Hysteria 2"
+  
+  [[ ! -f "$HY_SERVER_DIR/config.yaml" ]] && { error "Hysteria 未安装，请先执行选项 1"; return; }
+  
+  echo "======================================"
+  echo " 1) 手动更新"
+  echo " 2) 自动更新（每天 4:00）"
+  echo " 0) 返回主菜单"
+  echo "======================================"
+  read -r -p " 请输入选项 [0-2]: " sub_choice
+  
+  case "$sub_choice" in
+    1)
+      echo ""
+      echo -e "  ${YELLOW}[>] 正在更新 Hysteria...${NC}"
+      bash <(curl -fsSL https://get.hy2.sh/) 2>&1 | grep -v 'tput' || true
+      
+      if command -v hysteria &>/dev/null; then
+        info "Hysteria 更新完成 ($(hysteria version 2>/dev/null | grep -i version | head -1))"
+      else
+        error "更新失败"
+      fi
+      ;;
+    2)
+      echo ""
+      # 设置自动更新 cron
+      local cron_job="0 4 * * * /bin/bash -c 'bash <(curl -fsSL https://get.hy2.sh/)'"
+      
+      if crontab -l 2>/dev/null | grep -q "get.hy2.sh"; then
+        info "自动更新已设置（每天 4:00）"
+        echo -e "  ${YELLOW}当前规则:${NC}"
+        crontab -l 2>/dev/null | grep "get.hy2.sh"
+      else
+        (crontab -l 2>/dev/null; echo "$cron_job") | crontab -
+        info "✅ 自动更新已启用，每天 4:00 自动更新 Hysteria"
+        echo ""
+        echo -e "  ${YELLOW}如需取消自动更新，请执行:${NC}"
+        echo -e "  crontab -l | grep -v 'get.hy2.sh' | crontab -"
+      fi
+      ;;
+    0)
+      return
+      ;;
+    *)
+      warn "无效选项"
+      ;;
+  esac
+}
+
 # ---- 卸载 ----
 uninstall_hysteria() {
   header "🗑️ 卸载 Hysteria 2"
@@ -531,38 +582,55 @@ uninstall_hysteria() {
 show_menu() {
   # 检查安装状态
   local installed=""
+  local version_info=""
   if command -v hysteria &>/dev/null && [[ -f "$HY_SERVER_DIR/config.yaml" ]]; then
     if systemctl is-active --quiet "$HY_SERVICE" 2>/dev/null; then
-      installed="${GREEN}● 已安装 ✓${NC}"
+      installed="${GREEN}已安装 ✓${NC}"
     else
-      installed="${RED}● 已停止${NC}"
+      installed="${RED}已停止${NC}"
     fi
+    version_info=$(hysteria version 2>/dev/null | grep -oP 'Version:\s*\K\S+' | head -1 || echo "")
   else
-    installed="${YELLOW}○ 未安装${NC}"
+    installed="${YELLOW}未安装${NC}"
+  fi
+
+  # 获取当前端口、更新状态等信息
+  local cur_port cur_hop_start cur_hop_end
+  cur_port=$(get_config_val "port")
+  cur_hop_start=$(get_config_val "hop_start")
+  cur_hop_end=$(get_config_val "hop_end")
+  [[ -z "$cur_port" ]] && cur_port="$HY_PORT"
+  [[ -z "$cur_hop_start" ]] && cur_hop_start="$HY_HOP_START"
+  [[ -z "$cur_hop_end" ]] && cur_hop_end="$HY_HOP_END"
+  
+  local auto_update_status="${YELLOW}未开启${NC}"
+  if crontab -l 2>/dev/null | grep -q "get.hy2.sh"; then
+    auto_update_status="${GREEN}每天 4:00${NC}"
   fi
   
-  clear 2>/dev/null || true
   echo ""
-  echo -e "${CYAN}  ╔══════════════════════════════════════╗${NC}"
-  echo -e "${CYAN}  ║        Hysteria 2 管理脚本            ║${NC}"
-  echo -e "${CYAN}  ║          by：Kook-9527               ║${NC}"
-  echo -e "${CYAN}  ╚══════════════════════════════════════╝${NC}"
-  echo ""
-  echo -e "  ${BOLD}状态:${NC} $installed"
-  echo ""
-  echo -e "  ${YELLOW}1.${NC} 安装/重新安装"
-  echo -e "  ${YELLOW}2.${NC} 修改配置"
-  echo -e "  ${YELLOW}3.${NC} 查看节点信息"
-  echo -e "  ${YELLOW}4.${NC} 卸载"
-  echo -e "  ${YELLOW}0.${NC} 退出"
-  echo ""
-  read -r -p "  请选择 [0-4]: " choice || true
+  echo "======================================"
+  echo " Hysteria2 管理脚本 丨 by：Kook9527"
+  echo "======================================"
+  echo -e " 服务状态：$installed 丨版本：${version_info:-N/A}"
+  echo -e " 监听端口：$cur_port    丨端口跳跃：$cur_hop_start-$cur_hop_end"
+  echo -e " 快捷命令：hy2      丨自动更新：$auto_update_status"
+  echo "======================================"
+  echo " 1) 安装/重新安装"
+  echo " 2) 修改配置"
+  echo " 3) 查看节点信息"
+  echo " 4) 更新"
+  echo " 5) 卸载"
+  echo " 0) 退出"
+  echo "======================================"
+  read -r -p " 请输入选项 [0-5]: " choice || true
   
   case "$choice" in
     1) install_hysteria ;;
     2) modify_config ;;
     3) show_node_info ;;
-    4) uninstall_hysteria ;;
+    4) update_hysteria ;;
+    5) uninstall_hysteria ;;
     0) echo -e "  ${GREEN}再见！${NC}"; exit 0 ;;
     *) warn "无效选项" ;;
   esac
@@ -572,6 +640,19 @@ show_menu() {
   show_menu
 }
 
+# ==================== 设置 hy2 快捷命令 ====================
+setup_shortcut() {
+  local script_path
+  script_path="$(readlink -f "$0")"
+  
+  if [[ ! -L /usr/local/bin/hy2 ]] || [[ "$(readlink /usr/local/bin/hy2)" != "$script_path" ]]; then
+    ln -sf "$script_path" /usr/local/bin/hy2
+    chmod +x "$script_path"
+    info "快捷命令已设置：输入 hy2 即可进入脚本"
+  fi
+}
+
 # ==================== 启动 ====================
 check_root
+setup_shortcut
 show_menu
