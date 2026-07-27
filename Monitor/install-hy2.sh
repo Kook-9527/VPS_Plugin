@@ -202,7 +202,7 @@ install_hysteria() {
   openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
     -days 36500 -keyout "$HY_KEY" -out "$HY_CERT" \
     -subj "/CN=$HY_DOMAIN" 2>/dev/null
-  CERT_FP=$(openssl x509 -noout -fingerprint -sha256 -in "$HY_CERT" | cut -d= -f2)
+  CERT_FP=$(openssl x509 -noout -fingerprint -sha256 -in "$HY_CERT" | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
   info "自签证书已生成 (CN=$HY_DOMAIN)"
   
   # 端口跳跃
@@ -282,6 +282,7 @@ bandwidth:
 tls:
   insecure: true
   sni: ${HY_DOMAIN}
+  pinSHA256: ${CERT_FP}
 
 socks5:
   listen: 127.0.0.1:1080
@@ -295,7 +296,7 @@ transport:
 EOF
   
   local link
-  link="hy2://${HY_PASSWORD}@${server_ip}:${HY_PORT}?insecure=1&sni=${HY_DOMAIN}&mport=${HY_PORT},${HY_HOP_START}-${HY_HOP_END}&hopinterval=30#Hysteria2-${server_ip}"
+  link="hy2://${HY_PASSWORD}@${server_ip}:${HY_PORT}?insecure=1&sni=${HY_DOMAIN}&pinSHA256=${CERT_FP}&mport=${HY_PORT},${HY_HOP_START}-${HY_HOP_END}&hopinterval=30#Hysteria2-${server_ip}"
   echo "$link" > "$HY_CLIENT_DIR/link.txt"
   
   info "客户端配置: $HY_CLIENT_DIR/client.yaml"
@@ -404,6 +405,8 @@ EOF
   # 更新客户端配置
   local server_ip
   server_ip=$(get_server_ip)
+  local cert_fp
+  cert_fp=$(openssl x509 -noout -fingerprint -sha256 -in "$HY_CERT" 2>/dev/null | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
   mkdir -p "$HY_CLIENT_DIR"
   
   cat > "$HY_CLIENT_DIR/client.yaml" << EOF
@@ -419,6 +422,7 @@ bandwidth:
 tls:
   insecure: true
   sni: ${new_domain}
+  pinSHA256: ${cert_fp}
 
 socks5:
   listen: 127.0.0.1:1080
@@ -432,7 +436,7 @@ transport:
 EOF
   
   local link
-  link="hy2://${new_pw}@${server_ip}:${new_port}?insecure=1&sni=${new_domain}&mport=${new_port},${new_hop_start}-${new_hop_end}&hopinterval=30#Hysteria2-${server_ip}"
+  link="hy2://${new_pw}@${server_ip}:${new_port}?insecure=1&sni=${new_domain}&pinSHA256=${cert_fp}&mport=${new_port},${new_hop_start}-${new_hop_end}&hopinterval=30#Hysteria2-${server_ip}"
   echo "$link" > "$HY_CLIENT_DIR/link.txt"
   
   # 重启服务
@@ -462,7 +466,7 @@ show_node_info() {
   hop_start=$(get_config_val "hop_start")
   hop_end=$(get_config_val "hop_end")
   server_ip=$(get_server_ip)
-  cert_fp=$(openssl x509 -noout -fingerprint -sha256 -in "$HY_CERT" 2>/dev/null | cut -d= -f2)
+  cert_fp=$(openssl x509 -noout -fingerprint -sha256 -in "$HY_CERT" 2>/dev/null | cut -d= -f2 | tr -d ':' | tr '[:upper:]' '[:lower:]')
   
   local service_status="未安装"
   if systemctl is-active --quiet "$HY_SERVICE" 2>/dev/null; then
@@ -472,7 +476,7 @@ show_node_info() {
   fi
   
   local link
-  link="hy2://${password}@${server_ip}:${port}?insecure=1&sni=${domain}&mport=${port},${hop_start}-${hop_end}&hopinterval=30#Hysteria2-${server_ip}"
+  link="hy2://${password}@${server_ip}:${port}?insecure=1&sni=${domain}&pinSHA256=${cert_fp}&mport=${port},${hop_start}-${hop_end}&hopinterval=30#Hysteria2-${server_ip}"
   
   echo -e "  ${BOLD}服务状态:${NC}   ${service_status}"
   sep
