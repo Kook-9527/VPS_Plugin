@@ -113,7 +113,6 @@ for dns in "${DNS_SERVERS[@]}"; do
     log ""
     continue
   fi
-  ping_int=${ping_avg%.*}
 
   # --- ② DNS 解析测试 ---
   total=0
@@ -135,18 +134,20 @@ for dns in "${DNS_SERVERS[@]}"; do
   done
 
   if [ "$count" -eq 0 ]; then
-    log "  ❌ dig 全部超时 (${dig_fail}/${DIG_SAMPLES}次失败)"
+    log "  ❌ dig 全部超时 (${dig_fail}次失败)"
     log ""
     continue
   fi
-  dig_avg=$((total / count))
+  dig_success_avg=$((total / count))
+  # 超时按 DIG_TIMEOUT 计入平均，避免只统计成功请求导致超时越多分数反而越好
+  dig_avg=$(( (total + dig_fail * DIG_TIMEOUT * 1000) / (count + dig_fail) ))
 
   # --- ③ 综合评分 ---
-  combined=$(( (ping_int * 3 + dig_avg * 7) / 10 ))
+  combined=$(awk -v ping="$ping_avg" -v dig="$dig_avg" 'BEGIN { printf "%.1f", ping * 0.3 + dig * 0.7 }')
   echo "$combined|$ping_avg|$dig_avg|$dns" >> "$TEMP_FILE"
 
   fail_info=""
-  [ "$dig_fail" -gt 0 ] && fail_info=" (${dig_fail}次超时)"
+  [ "$dig_fail" -gt 0 ] && fail_info=" (${dig_fail}次超时，成功均值=${dig_success_avg}ms)"
   log "  ✅ ping=${ping_avg}ms | dig=${dig_avg}ms${fail_info} | 综合=${combined}ms"
   log ""
 done
